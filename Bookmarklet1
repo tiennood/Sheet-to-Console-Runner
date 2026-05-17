@@ -1,7 +1,7 @@
 javascript:(function(){
     if(document.getElementById('gh-automation-ui')) return;
 
-    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH - ĐÃ LOẠI BỎ TOKEN MẶC ĐỊNH */
+    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH */
     const FIXED_DATA = {
         apk: "https://github.com/tiennood/tiennood.github.io/releases/download/apk/Delta-2.720.1167.apk",
         script: `task.spawn(function()local function l(u)local s,e=pcall(function()loadstring(game:HttpGet(u))()end)if not s then warn("❌ Load lỗi:",u,e)else print("✅ Loaded:",u)end end;l("https://gist.githubusercontent.com/tiennood/dab0cd4f2d5fafc5e3a7964503853cde/raw/3d00a4c03c332db9ffdb1a3d5fd4e3877b44904c/gistfile1.txt");l("https://raw.githubusercontent.com/Chris12089/atlasbss/main/script.lua");l("https://gist.githubusercontent.com/tiennood/692622c21d2892f4118e9a8cf788685d/raw/38d086117a6c00f6d1c8ef34ed70c37ed45c1cde/gistfile1.txt");l("https://gist.githubusercontent.com/tiennood/8e4eeccfa910ace045b4c277c608796d/raw/a462ee175f61b2ce3a971f48c8b93171b92e0d2c/gistfile1.txt");task.wait(30);l("https://gist.githubusercontent.com/Jinn-645/71be8fe94eeffcf216585c040fc551a4/raw/AutoFeed.lua")end)`,
@@ -14,7 +14,8 @@ javascript:(function(){
         if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
             activeEl.value = text;
             activeEl.dispatchEvent(new Event('input', { bubbles: true }));
-        } else { alert("Vui lòng click vào ô cần dán trước!"); }
+        }
+        /* ĐÃ BỎ ALERT THÔNG BÁO Ở ĐÂY */
     };
 
     const robustCSVParser = (line) => {
@@ -89,7 +90,7 @@ javascript:(function(){
             <button id="gh-toggle-btn" style="background:#444; color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:10px;">Ẩn</button>
         </div>
         <div id="gh-main-content">
-            <input type="text" id="gh-input-stt" placeholder="Nhập STT..." style="width:100%; padding:6px; margin-bottom:5px; border-radius:4px; border:1px solid #444; background:#222; color:white; box-sizing:border-box;">
+            <input type="text" id="gh-input-stt" autocomplete="off" placeholder="Nhập STT..." style="width:100%; padding:6px; margin-bottom:5px; border-radius:4px; border:1px solid #444; background:#222; color:white; box-sizing:border-box;">
             <button id="gh-btn-run" style="width:100%; background:#3498db; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:10px;">LẤY DỮ LIỆU</button>
             <div id="gh-dynamic-buttons" style="margin-bottom:10px;"></div>
             <div style="border-top:1px solid #333; padding-top:10px;">
@@ -126,7 +127,6 @@ javascript:(function(){
         if (val) fetchAndRun(val);
     };
 
-    /* 5. KHỞI TẠO: LUÔN ƯU TIÊN LẤY MỚI KHI BẤM NÚT, CHỈ HIỂN THỊ LẠI NẾU ĐÃ CÓ DỮ LIỆU CŨ */
     const oldAcc = localStorage.getItem('saved_acc_name');
     const oldPass = localStorage.getItem('saved_acc_pass');
     const oldStt = localStorage.getItem('saved_stt');
