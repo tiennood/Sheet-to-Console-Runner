@@ -1,46 +1,57 @@
 /**
  * TÀI LIỆU:
- * - targetId: STT nhập từ Console.
- * - cols[1]: Nội dung mã script cần chạy (Cột B).
- * - cols[2]: Số thứ tự để lọc (Cột C).
+ * - cols[2]: Số thứ tự (Cột C)
+ * - cols[3]: Đoạn mã localStorage cần chạy (Cột D)
  */
-async function fetchAndRun(targetId) {
+async function fetchAndRun(targetStt) {
     const sheetId = "1u9lQT4e0AA5SAALuzT9-4AgA3G6V9WZeFvHXleRsXaI";
     const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 
     try {
-        console.log(`%c[Hệ thống] Đang kiểm tra STT: ${targetId}`, "color: #3498db");
+        console.log(`%c[Hệ thống] Đang tìm kiếm STT: ${targetStt}`, "color: #00dbde; font-weight: bold;");
         const response = await fetch(csvUrl);
         const csvText = await response.text();
-
-        // Tách dữ liệu thành các hàng
+        
+        // Tách các hàng
         const rows = csvText.split('\n');
         let found = false;
 
         for (let row of rows) {
-            // Tách cột và loại bỏ dấu ngoặc kép dư thừa từ Google CSV
-            const cols = row.split('","').map(c => c.replace(/"/g, '').trim());
+            /** 
+             * Xử lý đặc biệt cho CSV của Google: 
+             * Dữ liệu thường được bọc bởi " và phân cách bởi ,
+             */
+            const cols = row.split('","').map(c => c.replace(/^"|"$/g, '').trim());
 
-            // So khớp với cột C (index 2)
-            if (cols[2] === targetId.toString()) {
+            // Kiểm tra cột C (Index 2)
+            if (cols[2] === targetStt.toString()) {
                 found = true;
-                console.log(`%c[Thành công] Đã tìm thấy hàng cho STT: ${targetId}`, "color: #2ecc71");
                 
-                const scriptToExecute = cols[1]; // Lấy mã ở cột B
-                if (scriptToExecute) {
-                    console.log("Đang thực thi mã...");
-                    eval(scriptToExecute); 
+                // Lấy mã thực thi từ cột D (Index 3)
+                const scriptToRun = cols[3]; 
+
+                if (scriptToRun) {
+                    console.log(`%c[Khớp STT ${targetStt}]`, "color: #2ecc71; font-weight: bold;");
+                    console.log("Đang thực thi lệnh cài đặt localStorage...");
+                    
+                    // Chạy mã: localStorage.setItem...
+                    try {
+                        eval(scriptToRun);
+                        console.log("%c[Thành công] localStorage đã được cập nhật!", "color: #f1c40f;");
+                    } catch (e) {
+                        console.error("Lỗi khi thực thi mã từ Sheet:", e);
+                    }
                 } else {
-                    console.warn("Ô nội dung ở cột B đang trống.");
+                    console.warn("Tìm thấy STT nhưng cột D không có dữ liệu.");
                 }
                 break;
             }
         }
 
         if (!found) {
-            console.error(`Không tìm thấy STT "${targetId}" trong bảng tính.`);
+            console.error(`Không tìm thấy STT "${targetStt}" trong bảng tính. Vui lòng kiểm tra lại cột C.`);
         }
     } catch (error) {
-        console.error("Lỗi khi kết nối dữ liệu Google Sheets:", error);
+        console.error("Lỗi kết nối dữ liệu:", error);
     }
 }
