@@ -1,70 +1,76 @@
 /**
- * Hàm phân tách CSV an toàn (không bị lỗi bởi dấu phẩy trong JSON)
+ * Hàm tách cột CSV thông minh
+ * Giúp xử lý các cột chứa dấu phẩy bên trong ngoặc kép
  */
-function parseCSVLine(text) {
-    let columns = [];
+function robustCSVParser(line) {
+    const result = [];
     let curVal = "";
     let inQuotes = false;
 
-    for (let i = 0; i < text.length; i++) {
-        let char = text[i];
-        let nextChar = text[i + 1];
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
 
-        if (inQuotes && char === '"' && nextChar === '"') {
+        if (char === '"' && inQuotes && nextChar === '"') {
+            // Xử lý dấu ngoặc kép đôi bên trong chuỗi ("")
             curVal += '"';
-            i++;
+            i++; 
         } else if (char === '"') {
+            // Đảo ngược trạng thái nằm trong/ngoài ngoặc kép
             inQuotes = !inQuotes;
         } else if (char === ',' && !inQuotes) {
-            columns.push(curVal.trim());
+            // Chỉ tách cột khi gặp dấu phẩy nằm NGOÀI ngoặc kép
+            result.push(curVal.trim());
             curVal = "";
         } else {
             curVal += char;
         }
     }
-    columns.push(curVal.trim());
-    return columns;
+    result.push(curVal.trim());
+    return result;
 }
 
 /**
- * Hàm chính để tìm và chạy mã
+ * Hàm chính tìm kiếm STT và chạy mã
  */
 async function fetchAndRun(targetStt) {
     const sheetId = "1u9lQT4e0AA5SAALuzT9-4AgA3G6V9WZeFvHXleRsXaI";
     const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 
     try {
-        console.log(`%c[Hệ thống] Bắt đầu quét STT: ${targetStt}`, "color: #3498db; font-weight: bold;");
+        console.log(`%c[Hệ thống] Đang quét tìm STT: ${targetStt}`, "color: #3498db; font-weight: bold;");
         
         const response = await fetch(csvUrl);
         const csvText = await response.text();
-
-        // Tách hàng và loại bỏ ký tự xuống dòng của Windows (\r)
         const rows = csvText.split(/\r?\n/);
+
         let found = false;
 
         for (let row of rows) {
             if (!row.trim()) continue;
 
-            const cols = parseCSVLine(row);
+            // Sử dụng bộ tách cột thông minh
+            const cols = robustCSVParser(row);
 
-            // Cột C là index 2, làm sạch khoảng trắng
-            const currentStt = cols[2] ? cols[2].replace(/["']/g, "").trim() : "";
+            // Cột C nằm ở index 2
+            // Loại bỏ tất cả dấu ngoặc kép còn sót lại để so sánh số
+            const currentStt = cols[2] ? cols[2].replace(/"/g, "").trim() : "";
 
             if (currentStt === targetStt.toString().trim()) {
                 found = true;
-                const scriptToRun = cols[3]; // Cột D là index 3
-
-                console.log(`%c[Khớp dữ liệu] Tìm thấy STT ${targetStt} ở cột C`, "color: #2ecc71;");
+                // Mã thực thi nằm ở Cột D (index 3)
+                let scriptToRun = cols[3];
 
                 if (scriptToRun) {
+                    // Làm sạch mã: bỏ dấu bọc ngoài và đổi "" thành "
+                    const cleanCode = scriptToRun.replace(/^"|"$/g, '').replace(/""/g, '"');
+                    
+                    console.log(`%c[Thành công] Đã tìm thấy STT ${targetStt}`, "color: #2ecc71; font-weight: bold;");
                     try {
-                        // Làm sạch mã trước khi chạy (bỏ dấu ngoặc bọc ngoài nếu có)
-                        const finalCode = scriptToRun.replace(/^"|"$/g, '').replace(/""/g, '"');
-                        eval(finalCode);
-                        console.log("%c[Thành công] Đã thực thi lệnh localStorage!", "color: #f1c40f;");
+                        eval(cleanCode);
+                        console.log("%c[Hệ thống] Đã thực thi lệnh localStorage!", "color: #f1c40f;");
                     } catch (e) {
-                        console.error("Lỗi khi chạy mã eval:", e);
+                        console.error("Lỗi thực thi mã:", e);
                     }
                 }
                 break;
@@ -72,10 +78,10 @@ async function fetchAndRun(targetStt) {
         }
 
         if (!found) {
-            console.warn(`%c[Cảnh báo] Không tìm thấy STT ${targetStt}. Hãy đảm bảo số này nằm ở cột C.`, "color: #e74c3c;");
+            console.warn(`%c[Lỗi] Không tìm thấy STT ${targetStt} trong danh sách!`, "color: #e74c3c; font-weight: bold;");
         }
 
     } catch (error) {
-        console.error("Lỗi kết nối dữ liệu:", error);
+        console.error("Lỗi tải dữ liệu từ Sheets:", error);
     }
 }
