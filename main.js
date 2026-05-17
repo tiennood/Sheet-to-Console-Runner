@@ -1,48 +1,43 @@
 /**
- * Hàm lấy dữ liệu và thực thi dựa trên STT
- * @param {string} targetId - Số thứ tự nhập từ Console
+ * Hàm thực thi chính: Tìm dữ liệu theo STT và chạy script
+ * @param {string} targetStt - STT người dùng nhập (Cột C)
  */
-async function fetchAndRun(targetId) {
-    // ID của Google Sheet bạn đã cung cấp
+async function fetchAndRun(targetStt) {
     const sheetId = "1u9lQT4e0AA5SAALuzT9-4AgA3G6V9WZeFvHXleRsXaI";
     const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
 
     try {
-        console.log(`%c[Đang tải dữ liệu cho ID: ${targetId}]`, "color: #3498db; font-weight: bold;");
-        
+        console.log(`%c[Hệ thống] Đang kiểm tra dữ liệu cho STT: ${targetStt}`, "color: #3498db");
         const response = await fetch(csvUrl);
-        const text = await response.text();
+        const data = await response.text();
 
-        // Tách các hàng từ file CSV
-        const rows = text.split('\n');
+        // Tách hàng và cột từ CSV
+        const rows = data.split('\n');
         let found = false;
 
         for (let row of rows) {
-            // Tách các cột. Google Sheet CSV dùng dấu "," để phân tách
+            // Tách các cột dựa trên dấu phẩy và loại bỏ dấu ngoặc kép dư thừa
             const cols = row.split('","').map(c => c.replace(/"/g, '').trim());
 
-            // cols[2] tương ứng với cột C (Số thứ tự)
-            if (cols[2] === targetId.toString()) {
+            // Kiểm tra cột C (index 2)
+            if (cols[2] === targetStt.toString()) {
                 found = true;
-                const scriptToRun = cols[1]; // Cột B (Mã script)
+                const codeToRun = cols[1]; // Lấy script từ cột B
 
-                console.log(`%c[Thành công] Tìm thấy dữ liệu tại cột C: ${cols[2]}`, "color: #2ecc71;");
+                console.log(`%c[Thành công] Tìm thấy hàng cho STT ${targetStt}`, "color: #2ecc71");
                 
-                if (scriptToRun) {
-                    console.log("Đang thực thi mã từ cột B...");
-                    eval(scriptToRun);
+                if (codeToRun) {
+                    console.log("Đang thực thi mã...");
+                    eval(codeToRun);
                 } else {
-                    console.warn("Ô script (cột B) đang trống!");
+                    console.warn("Ô script ở cột B đang trống.");
                 }
                 break;
             }
         }
 
-        if (!found) {
-            console.error(`Không tìm thấy STT "${targetId}" trong bảng tính.`);
-        }
-
-    } catch (error) {
-        console.error("Lỗi khi kết nối với Google Sheets:", error);
+        if (!found) console.error(`Không tìm thấy STT ${targetStt} ở cột C.`);
+    } catch (err) {
+        console.error("Lỗi khi kết nối Google Sheets:", err);
     }
 }
