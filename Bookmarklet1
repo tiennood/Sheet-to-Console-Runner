@@ -1,11 +1,12 @@
 javascript:(function(){
     if(document.getElementById('gh-automation-ui')) return;
 
-    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH */
+    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH (ĐÃ THÊM LINK FORM) */
     const FIXED_DATA = {
         apk: "https://github.com/tiennood/tiennood.github.io/releases/download/apk/Delta-2.720.1167.apk",
         script: `task.spawn(function()local function l(u)local s,e=pcall(function()loadstring(game:HttpGet(u))()end)if not s then warn("❌ Load lỗi:",u,e)else print("✅ Loaded:",u)end end;l("https://gist.githubusercontent.com/tiennood/dab0cd4f2d5fafc5e3a7964503853cde/raw/3d00a4c03c332db9ffdb1a3d5fd4e3877b44904c/gistfile1.txt");l("https://raw.githubusercontent.com/Chris12089/atlasbss/main/script.lua");l("https://gist.githubusercontent.com/tiennood/692622c21d2892f4118e9a8cf788685d/raw/38d086117a6c00f6d1c8ef34ed70c37ed45c1cde/gistfile1.txt");l("https://gist.githubusercontent.com/tiennood/8e4eeccfa910ace045b4c277c608796d/raw/a462ee175f61b2ce3a971f48c8b93171b92e0d2c/gistfile1.txt");task.wait(30);l("https://gist.githubusercontent.com/Jinn-645/71be8fe94eeffcf216585c040fc551a4/raw/AutoFeed.lua")end)`,
-        config: `loadstring(game:HttpGet("https://gist.githubusercontent.com/tiennood/2e5794287b97252693b83fd83e8685cf/raw/d330e024a31565911168be81a7b1812717d2c893/gistfile1.txt"))()`
+        config: `loadstring(game:HttpGet("https://gist.githubusercontent.com/tiennood/2e5794287b97252693b83fd83e8685cf/raw/d330e024a31565911168be81a7b1812717d2c893/gistfile1.txt"))()`,
+        form: "https://docs.google.com/forms/d/e/1FAIpQLSdCgmhwlNG8WBMigyLQlO5NCNL74lt5Uu16DgPDAY9jZhrogQ/viewform?usp=dialog"
     };
 
     /* 2. CÁC HÀM XỬ LÝ LOGIC */
@@ -15,7 +16,6 @@ javascript:(function(){
             activeEl.value = text;
             activeEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        /* ĐÃ BỎ ALERT THÔNG BÁO Ở ĐÂY */
     };
 
     const robustCSVParser = (line) => {
@@ -96,7 +96,8 @@ javascript:(function(){
             <div style="border-top:1px solid #333; padding-top:10px;">
                 <button id="btn-fix-apk" style="width:100%; background:#27ae60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán APK Delta</button>
                 <button id="btn-fix-script" style="width:100%; background:#8e44ad; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Script Lua</button>
-                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">Dán Load Config</button>
+                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Load Config</button>
+                <button id="btn-open-form" style="width:100%; background:#1f3a60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">Mở Google Form</button>
             </div>
             <button onclick="document.getElementById('gh-automation-ui').remove()" style="background:none; border:none; color:#555; cursor:pointer; width:100%; margin-top:10px; font-size:10px;">[ Thoát ]</button>
         </div>
@@ -122,6 +123,8 @@ javascript:(function(){
     document.getElementById('btn-fix-apk').onclick = () => quickPaste(FIXED_DATA.apk);
     document.getElementById('btn-fix-script').onclick = () => quickPaste(FIXED_DATA.script);
     document.getElementById('btn-fix-config').onclick = () => quickPaste(FIXED_DATA.config);
+    document.getElementById('btn-open-form').onclick = () => window.open(FIXED_DATA.form, '_blank');
+    
     document.getElementById('gh-btn-run').onclick = () => {
         const val = document.getElementById('gh-input-stt').value.trim();
         if (val) fetchAndRun(val);
