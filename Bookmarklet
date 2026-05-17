@@ -1,5 +1,8 @@
 javascript:(function(){
     var script = document.createElement('script');
-    script.src = 'https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/main/ui-loader.js?t=' + Date.now();
+    /* Sử dụng statically để đảm bảo header Content-Type chính xác */
+    script.src = 'https://img.statically.io/gh/tiennood/Sheet-to-Console-Runner/main/ui-loader.js?t=' + Date.now();
+    script.onload = function() { console.log("Script loaded successfully!"); };
+    script.onerror = function() { alert("Không thể tải script. Có thể do trang web chặn (CSP)."); };
     document.head.appendChild(script);
 })();
