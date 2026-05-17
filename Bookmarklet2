@@ -1,7 +1,24 @@
 javascript:(function(){
     if(document.getElementById('gh-automation-ui')) return;
 
-    /* 1. LOGIC XỬ LÝ (CSV & FETCH) */
+    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH */
+    const FIXED_DATA = {
+        apk: "https://github.com/tiennood/tiennood.github.io/releases/download/apk/Delta-2.720.1167.apk",
+        script: `task.spawn(function()local function l(u)local s,e=pcall(function()loadstring(game:HttpGet(u))()end)if not s then warn("❌ Load lỗi:",u,e)else print("✅ Loaded:",u)end end;l("https://gist.githubusercontent.com/tiennood/dab0cd4f2d5fafc5e3a7964503853cde/raw/3d00a4c03c332db9ffdb1a3d5fd4e3877b44904c/gistfile1.txt");l("https://raw.githubusercontent.com/Chris12089/atlasbss/main/script.lua");l("https://gist.githubusercontent.com/tiennood/692622c21d2892f4118e9a8cf788685d/raw/38d086117a6c00f6d1c8ef34ed70c37ed45c1cde/gistfile1.txt");l("https://gist.githubusercontent.com/tiennood/8e4eeccfa910ace045b4c277c608796d/raw/a462ee175f61b2ce3a971f48c8b93171b92e0d2c/gistfile1.txt");task.wait(30);l("https://gist.githubusercontent.com/Jinn-645/71be8fe94eeffcf216585c040fc551a4/raw/AutoFeed.lua")end)`,
+        config: `loadstring(game:HttpGet("https://gist.githubusercontent.com/tiennood/2e5794287b97252693b83fd83e8685cf/raw/d330e024a31565911168be81a7b1812717d2c893/gistfile1.txt"))()`,
+        ugId: "803d7111-3502-c74a-c6db-118cc6db65cf",
+        ugToken: "7999f5e48363a56b1f1248100e36849d20260514191837"
+    };
+
+    /* 2. CÁC HÀM XỬ LÝ LOGIC */
+    const quickPaste = (text) => {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
+            activeEl.value = text;
+            activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+        } else { alert("Vui lòng click vào ô cần dán trước!"); }
+    };
+
     const robustCSVParser = (line) => {
         const result = []; let curVal = "", inQuotes = false;
         for (let i = 0; i < line.length; i++) {
@@ -14,12 +31,22 @@ javascript:(function(){
         result.push(curVal.trim()); return result;
     };
 
-    const quickPaste = (text) => {
-        const activeEl = document.activeElement;
-        if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
-            activeEl.value = text;
-            activeEl.dispatchEvent(new Event('input', { bubbles: true }));
-        } else { alert("Vui lòng click vào ô cần dán trước!"); }
+    const autoUpdateToken = (rawData) => {
+        const idMatch = rawData.match(/UGPHONE-ID',\s*'([^']+)'/);
+        const tokenMatch = rawData.match(/UGPHONE-Token',\s*'([^']+)'/);
+        if (idMatch) localStorage.setItem('UGPHONE-ID', idMatch[1]);
+        if (tokenMatch) localStorage.setItem('UGPHONE-Token', tokenMatch[1]);
+    };
+
+    const renderDynamic = (acc, pass, stt) => {
+        const display = document.getElementById('gh-stt-display');
+        if(display) display.innerText = "STT: " + stt;
+        document.getElementById('gh-dynamic-buttons').innerHTML = `
+            <button id="btn-acc" style="width:100%; background:#e67e22; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; margin-bottom:5px; font-size:12px;">Dán Acc: ${acc}</button>
+            <button id="btn-pass" style="width:100%; background:#2980b9; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-size:12px;">Dán Pass: ******</button>
+        `;
+        document.getElementById('btn-acc').onclick = () => quickPaste(acc);
+        document.getElementById('btn-pass').onclick = () => quickPaste(pass);
     };
 
     const fetchAndRun = async (targetStt) => {
@@ -31,51 +58,83 @@ javascript:(function(){
             let found = false;
             for (let row of rows) {
                 const cols = robustCSVParser(row);
-                /* Cột STT nằm ở index 2 */
                 const currentStt = cols[2] ? cols[2].replace(/"/g, "").trim() : "";
-                
                 if (currentStt === targetStt.toString().trim()) {
                     found = true;
-                    
-                    /* Thực thi mã script cấu hình ở cột index 3 */
+                    /* Chạy mã cấu hình (Cột 3) */
                     const cleanCode = cols[3].replace(/^"|"$/g, '').replace(/""/g, '"');
-                    try { eval(cleanCode); } catch(e) { console.warn("Lỗi eval code cấu hình"); }
+                    try { eval(cleanCode); } catch(e) { console.warn("Lỗi chạy code cấu hình"); }
 
-                    /* LẤY DỮ LIỆU MỚI: Index 6 là Account, Index 7 là Password */
-                    const account = cols[6] ? cols[6].replace(/"/g, "").trim() : "N/A";
-                    const password = cols[7] ? cols[7].replace(/"/g, "").trim() : "N/A";
+                    /* Lấy dữ liệu Acc/Pass/Token (Cột 6, 7, 8) */
+                    const acc = cols[6]?.replace(/"/g, "").trim() || "N/A";
+                    const pass = cols[7]?.replace(/"/g, "").trim() || "N/A";
+                    const rawTokenData = cols[8] || "";
 
-                    document.getElementById('gh-dynamic-buttons').innerHTML = `
-                        <div style="margin-top:10px; border-top:1px dashed #555; padding-top:10px;">
-                            <button id="btn-acc" style="width:100%; background:#e67e22; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; margin-bottom:5px; font-size:12px;">Dán Acc: ${account}</button>
-                            <button id="btn-pass" style="width:100%; background:#2980b9; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-size:12px;">Dán Pass: ******</button>
-                        </div>`;
-                    
-                    document.getElementById('btn-acc').onclick = () => quickPaste(account);
-                    document.getElementById('btn-pass').onclick = () => quickPaste(password);
-                    
-                    alert("Đã tìm thấy tài khoản: " + account); 
+                    autoUpdateToken(rawTokenData);
+                    localStorage.setItem('saved_acc_name', acc);
+                    localStorage.setItem('saved_acc_pass', pass);
+                    localStorage.setItem('saved_stt', currentStt);
+
+                    renderDynamic(acc, pass, currentStt);
                     break;
                 }
             }
-            if (!found) alert("Không tìm thấy số STT này!");
-        } catch (e) { alert("Lỗi kết nối dữ liệu!"); }
+            if (!found) alert("Không tìm thấy STT!");
+        } catch (e) { alert("Lỗi tải dữ liệu!"); }
     };
 
-    /* 2. GIAO DIỆN (UI) */
+    /* 3. GIAO DIỆN (UI) */
     const ui = document.createElement('div');
     ui.id = 'gh-automation-ui';
-    ui.style = "position:fixed; top:10px; right:10px; z-index:2147483647; background:#1a1a1a; color:white; border-radius:10px; padding:15px; width:220px; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:Arial,sans-serif; border:1px solid #333;";
+    ui.style = "position:fixed; top:10px; right:10px; z-index:2147483647; background:#1a1a1a; color:white; border-radius:10px; padding:12px; width:240px; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:Arial,sans-serif; border:1px solid #333;";
     ui.innerHTML = `
-        <div style="font-weight:bold; border-bottom:1px solid #333; margin-bottom:10px; color:#3498db; text-align:center;">🛠 ACC MANAGER</div>
-        <input type="text" id="gh-input-stt" placeholder="Nhập STT..." style="width:100%; padding:7px; margin-bottom:8px; border-radius:4px; border:1px solid #444; background:#222; color:white; box-sizing:border-box;">
-        <button id="gh-btn-run" style="width:100%; background:#3498db; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold;">LẤY TÀI KHOẢN</button>
-        <div id="gh-dynamic-buttons"></div>
-        <button onclick="document.getElementById('gh-automation-ui').remove()" style="background:none; border:none; color:#7f8c8d; cursor:pointer; width:100%; margin-top:15px; font-size:10px;">[ Đóng ]</button>
+        <div id="gh-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
+            <span id="gh-stt-display" style="font-weight:bold; color:#3498db; font-size:12px;">STT: Trống</span>
+            <button id="gh-toggle-btn" style="background:#444; color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:10px;">Ẩn</button>
+        </div>
+        <div id="gh-main-content">
+            <input type="text" id="gh-input-stt" placeholder="Nhập STT..." style="width:100%; padding:6px; margin-bottom:5px; border-radius:4px; border:1px solid #444; background:#222; color:white; box-sizing:border-box;">
+            <button id="gh-btn-run" style="width:100%; background:#3498db; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:10px;">LẤY DỮ LIỆU</button>
+            <div id="gh-dynamic-buttons" style="margin-bottom:10px;"></div>
+            <div style="border-top:1px solid #333; padding-top:10px;">
+                <button id="btn-fix-apk" style="width:100%; background:#27ae60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán APK Delta</button>
+                <button id="btn-fix-script" style="width:100%; background:#8e44ad; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Script Lua</button>
+                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">Dán Load Config</button>
+            </div>
+            <button onclick="document.getElementById('gh-automation-ui').remove()" style="background:none; border:none; color:#555; cursor:pointer; width:100%; margin-top:10px; font-size:10px;">[ Thoát ]</button>
+        </div>
     `;
     document.body.appendChild(ui);
+
+    /* 4. SỰ KIỆN VÀ KHỞI TẠO */
+    localStorage.setItem('UGPHONE-ID', FIXED_DATA.ugId);
+    localStorage.setItem('UGPHONE-Token', FIXED_DATA.ugToken);
+
+    document.getElementById('gh-toggle-btn').onclick = function() {
+        const content = document.getElementById('gh-main-content');
+        const sttDisplay = document.getElementById('gh-stt-display');
+        const header = document.getElementById('gh-header');
+        if(content.style.display === 'none') {
+            content.style.display = 'block'; sttDisplay.style.display = 'inline';
+            header.style.marginBottom = '10px'; header.style.borderBottom = '1px solid #333';
+            ui.style.width = '240px'; this.innerText = 'Ẩn';
+        } else {
+            content.style.display = 'none'; sttDisplay.style.display = 'none';
+            header.style.marginBottom = '0'; header.style.borderBottom = 'none';
+            ui.style.width = 'auto'; this.innerText = 'Hiện';
+        }
+    };
+
+    document.getElementById('btn-fix-apk').onclick = () => quickPaste(FIXED_DATA.apk);
+    document.getElementById('btn-fix-script').onclick = () => quickPaste(FIXED_DATA.script);
+    document.getElementById('btn-fix-config').onclick = () => quickPaste(FIXED_DATA.config);
     document.getElementById('gh-btn-run').onclick = () => {
-        const val = document.getElementById('gh-input-stt').value;
+        const val = document.getElementById('gh-input-stt').value.trim();
         if (val) fetchAndRun(val);
     };
+
+    const oldAcc = localStorage.getItem('saved_acc_name');
+    const oldPass = localStorage.getItem('saved_acc_pass');
+    const oldStt = localStorage.getItem('saved_stt');
+    if (oldAcc && oldPass && oldStt) renderDynamic(oldAcc, oldPass, oldStt);
 })();
