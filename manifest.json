@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Quick Paste Tools",
+  "version": "1.0",
+  "description": "Lưu và dán mã nhanh vào localStorage",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
