@@ -1,0 +1,5 @@
+javascript:(function(){
+    var script = document.createElement('script');
+    script.src = 'https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/main/ui-loader.js?t=' + Date.now();
+    document.head.appendChild(script);
+})();
