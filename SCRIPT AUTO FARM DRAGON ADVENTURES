@@ -1,0 +1,335 @@
+-- [[ SCRIPT AUTO FARM DRAGON ADVENTURES - PHIÊN BẢN TỐI ƯU V2 ]] --
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Camera = workspace.Camera
+
+-- Cài đặt cấu hình
+local TOGGLE_KEY = Enum.KeyCode.Z
+local CLICK_INTERVAL = 0.35
+local FLY_SPEED = 2.0 -- Tăng tốc độ bay trơn tru
+local WAIT_AFTER_LOOT = 0.4
+local CYCLE_TIME = 4
+
+-- Trạng thái hệ thống
+local isEnabled = false
+local isFarming = false
+local currentTween = nil
+local currentPointIndex = 1
+local lastTeleportTime = 0
+local bodyVelocity = nil
+
+-- Tọa độ điểm cày (Khu vực Shinrin)
+local TELEPORT_POINTS = {
+    CFrame.new(2137, 340, -1600),
+    CFrame.new(-400, 717, -4138),
+    CFrame.new(-1549, 513, -915),
+}
+
+-- Tọa độ Cửa hàng & Cổng dịch chuyển
+local SHOP_PORTAL_SHINRIN = CFrame.new(-372, 465, -414)
+local SHOP_PORTAL_ORIGINS = CFrame.new(-136, 134, -98)
+local SHOP_POSITION = CFrame.new(-24, 142, 228)
+local FORBIDDEN_ZONE = Vector3.new(-737, 840, -5310)
+
+-- Danh sách vật phẩm cần bán
+local FRUITS = {"Edamame", "Kaji Fruit", "Mist Sudachi"}
+
+-- ==================== TÌM KIẾM NHÂN VẬT AN TOÀN ====================
+local function getHRP()
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        return character.HumanoidRootPart
+    end
+    
+    -- Dự phòng: Nếu đang cưỡi rồng và rồng biến thành character tạm thời
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model:FindFirstChild("HumanoidRootPart") then
+            if model.Name == LocalPlayer.Name or model:FindFirstChild("AnimationController") then
+                return model.HumanoidRootPart
+            end
+        end
+    end
+    return nil
+end
+
+-- ==================== HỆ THỐNG THÔNG BÁO UI ====================
+local function notify(text, color)
+    pcall(function()
+        color = color or Color3.fromRGB(0, 200, 100)
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("NotifyGui") or Instance.new("ScreenGui", LocalPlayer.PlayerGui)
+        gui.Name = "NotifyGui"
+        
+        local frame = Instance.new("Frame", gui)
+        frame.Size = UDim2.new(0, 280, 0, 45)
+        frame.Position = UDim2.new(0.5, -140, 0, -60)
+        frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        frame.BorderSizePixel = 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+        
+        -- Thanh màu trang trí bên cạnh
+        local sideBar = Instance.new("Frame", frame)
+        sideBar.Size = UDim2.new(0, 6, 1, 0)
+        sideBar.BackgroundColor3 = color
+        sideBar.BorderSizePixel = 0
+        Instance.new("UICorner", sideBar).CornerRadius = UDim.new(0, 4)
+
+        local label = Instance.new("TextLabel", frame)
+        label.Size = UDim2.new(1, -20, 1, 0)
+        label.Position = UDim2.new(0, 15, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.TextSize = 14
+        label.Font = Enum.Font.GothamMedium
+        label.TextXAlignment = Enum.TextXAlignment.Left
+
+        TweenService:Create(frame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -140, 0, 20)}):Play()
+        task.delay(2.5, function()
+            if frame and frame.Parent then
+                TweenService:Create(frame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -140, 0, -60)}):Play()
+                task.wait(0.3)
+                frame:Destroy()
+            end
+        end)
+    end)
+end
+
+-- ==================== ĐIỀU KHIỂN BAY (PHYSICS) ====================
+local function enableFlight()
+    local hrp = getHRP()
+    if not hrp then return end
+    if not bodyVelocity or bodyVelocity.Parent ~= hrp then
+        if bodyVelocity then bodyVelocity:Destroy() end
+        bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = hrp
+    end
+end
+
+local function disableFlight()
+    if bodyVelocity then bodyVelocity:Destroy(); bodyVelocity = nil end
+end
+
+local function moveTo(pos, speed)
+    local hrp = getHRP()
+    if not hrp then return end
+    enableFlight()
+    if currentTween then currentTween:Cancel() end
+    currentTween = TweenService:Create(hrp, TweenInfo.new(speed or FLY_SPEED, Enum.EasingStyle.QuadOut), {CFrame = pos})
+    currentTween:Play()
+    currentTween.Completed:Wait()
+    currentTween = nil
+end
+
+-- ==================== QUẢN LÝ DỮ LIỆU CÂY CỐI ====================
+local function getTrees()
+    local nodesFolder = workspace:FindFirstChild("Interactions") and workspace.Interactions:FindFirstChild("Nodes") and workspace.Interactions.Nodes:FindFirstChild("Food")
+    if not nodesFolder then return {} end
+    
+    local trees = {}
+    for _, obj in ipairs(nodesFolder:GetChildren()) do
+        if obj.Name == "LargeFoodNode" then
+            local dead = obj:FindFirstChild("Dead", true)
+            if not (dead and dead:IsA("BoolValue") and dead.Value) then
+                table.insert(trees, obj)
+            end
+        end
+    end
+    return trees
+end
+
+local function isDead(tree)
+    if not tree or not tree.Parent then return true end
+    local dead = tree:FindFirstChild("Dead", true)
+    return dead and dead:IsA("BoolValue") and dead.Value
+end
+
+-- ==================== TẤN CÔNG THÔNG MINH ====================
+local function attack(treePos)
+    pcall(function()
+        -- Tính toán tọa độ trên màn hình mà không cần ép góc Camera xoay quá nhanh
+        local sp, onScreen = Camera:WorldToScreenPoint(treePos)
+        if onScreen then
+            VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 1)
+            task.wait(0.02)
+            VirtualInputManager:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 1)
+        else
+            -- Nếu khuất màn hình, xoay nhẹ camera góc nhỏ để đưa vào tầm nhìn
+            local hrp = getHRP()
+            if hrp then Camera.CFrame = CFrame.new(Camera.CFrame.Position, treePos) end
+        end
+    end)
+    task.wait(CLICK_INTERVAL)
+end
+
+-- ==================== VÒNG LẶP FARM CÂY ====================
+local function farmTree(tree)
+    if not isEnabled or isDead(tree) then return end
+    
+    local treePos = tree:GetPivot()
+    local standPosition = treePos * CFrame.new(0, 8, -12) -- Khoảng cách an toàn để đập cây
+    moveTo(standPosition, 1.2)
+    
+    local startTime = tick()
+    while isEnabled and not isDead(tree) and (tick() - startTime < CYCLE_TIME) do
+        attack(treePos.Position)
+    end
+    
+    -- Hút vật phẩm rơi ra sau khi cây chết
+    if isDead(tree) then
+        task.wait(WAIT_AFTER_LOOT)
+    end
+end
+
+-- ==================== DỊCH CHUYỂN GIỮA CÁC ĐIỂM ====================
+local function teleportToNext()
+    if tick() - lastTeleportTime < 2.5 then return end
+    local point = TELEPORT_POINTS[currentPointIndex]
+    
+    if point and (point.Position - FORBIDDEN_ZONE).Magnitude > 150 then
+        notify("Đang di chuyển tới khu vực mới...", Color3.fromRGB(255, 200, 50))
+        moveTo(point, 1.8)
+        lastTeleportTime = tick()
+        
+        currentPointIndex = currentPointIndex + 1
+        if currentPointIndex > #TELEPORT_POINTS then currentPointIndex = 1 end
+    end
+end
+
+-- ==================== ĐIỀU KHIỂN GIAO DIỆN (UI CLICKER) ====================
+local function clickButton(text, exact)
+    local found = false
+    pcall(function()
+        for _, gui in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+            if gui:IsA("TextButton") and gui.Visible then
+                local match = exact and (gui.Text == text) or gui.Text:lower():find(text:lower())
+                if match then
+                    local x = gui.AbsolutePosition.X + gui.AbsoluteSize.X / 2
+                    local y = gui.AbsolutePosition.Y + gui.AbsoluteSize.Y / 2
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+                    task.wait(0.02)
+                    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+                    found = true
+                    break
+                end
+            end
+        end
+    end)
+    return found
+end
+
+-- ==================== HỆ THỐNG TỰ ĐỘNG BÁN ĐỒ ====================
+local function goToShop()
+    notify("Kho đồ đầy! Đang đi bán...", Color3.fromRGB(255, 130, 0))
+    
+    -- Di chuyển đến cổng Shinrin để về Origins
+    moveTo(SHOP_PORTAL_SHINRIN * CFrame.new(0, 4, -6), 2)
+    task.wait(0.5)
+    
+    -- Nhấp chọn cổng dịch chuyển (Thử lại tối đa 5 lần nếu lag)
+    for i = 1, 5 do
+        if clickButton("Origins", true) then 
+            task.wait(3) -- Chờ tải map Origins
+            break 
+        end
+        task.wait(0.5)
+    end
+    
+    -- Đến vị trí Cửa hàng tại Origins
+    moveTo(SHOP_POSITION * CFrame.new(0, 6, -6), 2)
+    task.wait(0.5)
+    
+    -- Mở giao diện Shop và bán trái cây
+    for i = 1, 5 do
+        if clickButton("Store") or clickButton("Shop") then
+            task.wait(0.5)
+            clickButton("Food", true)
+            task.wait(0.3)
+            
+            for _, fruit in ipairs(FRUITS) do
+                if clickButton(fruit, true) then
+                    task.wait(0.2)
+                    clickButton("Sell")
+                    task.wait(0.2)
+                end
+            end
+            notify("Đã bán sạch nông sản thành công!", Color3.fromRGB(0, 255, 100))
+            break
+        end
+        task.wait(0.5)
+    end
+    
+    -- Quay trở lại Map Shinrin để tiếp tục farm
+    task.wait(0.5)
+    moveTo(SHOP_PORTAL_ORIGINS * CFrame.new(0, 4, -6), 2)
+    task.wait(0.5)
+    for i = 1, 5 do
+        if clickButton("Shinrin", true) then
+            task.wait(3)
+            break
+        end
+        task.wait(0.5)
+    end
+end
+
+-- ==================== CHƯƠNG TRÌNH CHÍNH ====================
+local function startFarm()
+    if isFarming then return end
+    isFarming = true
+    notify("BẮT ĐẦU AUTO FARM!", Color3.fromRGB(0, 255, 120))
+    
+    local loopCounter = 0
+    while isEnabled do
+        if not getHRP() then task.wait(1); continue end
+        
+        local trees = getTrees()
+        if #trees == 0 then
+            task.wait(1)
+            if isEnabled and #getTrees() == 0 then 
+                teleportToNext() 
+            end
+        else
+            for _, tree in ipairs(trees) do
+                if not isEnabled then break end
+                farmTree(tree)
+                
+                -- Cứ sau 8 lần đập cây sẽ tự đi check Shop bán đồ một lần
+                loopCounter = loopCounter + 1
+                if loopCounter >= 8 then
+                    loopCounter = 0
+                    goToShop()
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+    
+    disableFlight()
+    isFarming = false
+end
+
+-- ==================== BẮT SỰ KIỆN PHÍM Z ====================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == TOGGLE_KEY then
+        isEnabled = not isEnabled
+        if isEnabled then
+            if not getHRP() then
+                notify("Lỗi: Không tìm thấy Rồng/Nhân vật!", Color3.fromRGB(255, 50, 50))
+                isEnabled = false
+                return
+            end
+            task.spawn(startFarm)
+        else
+            if currentTween then currentTween:Cancel(); currentTween = nil end
+            disableFlight()
+            notify("ĐÃ TẮT AUTO FARM.", Color3.fromRGB(255, 70, 70))
+        end
+    end
+end)
+
+notify("Hệ thống đã sẵn sàng! Nhấn Z để Farm", Color3.fromRGB(100, 180, 255))
