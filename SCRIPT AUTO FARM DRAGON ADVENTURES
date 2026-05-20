@@ -1,4 +1,4 @@
--- [[ SCRIPT AUTO FARM DRAGON ADVENTURES - PHIÊN BẢN CÓ NÚT BẤM UI ]] --
+-- [[ SCRIPT AUTO FARM DRAGON ADVENTURES - PHIÊN BẢN THAO TÁC THUẦN MOBILE / KHÔNG BÀN PHÍM ]] --
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
@@ -7,7 +7,6 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local Camera = workspace.Camera
 
 -- Cài đặt cấu hình
-local TOGGLE_KEY = Enum.KeyCode.Z
 local CLICK_INTERVAL = 0.35
 local FLY_SPEED = 2.0 
 local WAIT_AFTER_LOOT = 0.4
@@ -20,6 +19,10 @@ local currentTween = nil
 local currentPointIndex = 1
 local lastTeleportTime = 0
 local bodyVelocity = nil
+
+-- Các thành phần UI hiển thị
+local mainButton = nil
+local statusLogLabel = nil
 
 -- Tọa độ điểm cày (Khu vực Shinrin)
 local TELEPORT_POINTS = {
@@ -35,6 +38,18 @@ local FORBIDDEN_ZONE = Vector3.new(-737, 840, -5310)
 
 local FRUITS = {"Edamame", "Kaji Fruit", "Mist Sudachi"}
 
+-- ==================== HÀM IN TRẠNG THÁI RA MÀN HÌNH ====================
+local function setStatus(text, isError)
+    if statusLogLabel then
+        statusLogLabel.Text = " Trạng thái: " .. text
+        if isError then
+            statusLogLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        else
+            statusLogLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+        end
+    end
+end
+
 -- ==================== TÌM KIẾM NHÂN VẬT AN TOÀN ====================
 local function getHRP()
     local character = LocalPlayer.Character
@@ -49,47 +64,6 @@ local function getHRP()
         end
     end
     return nil
-end
-
--- ==================== HỆ THỐNG THÔNG BÁO UI ====================
-local function notify(text, color)
-    pcall(function()
-        color = color or Color3.fromRGB(0, 200, 100)
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("NotifyGui") or Instance.new("ScreenGui", LocalPlayer.PlayerGui)
-        gui.Name = "NotifyGui"
-        
-        local frame = Instance.new("Frame", gui)
-        frame.Size = UDim2.new(0, 280, 0, 45)
-        frame.Position = UDim2.new(0.5, -140, 0, -60)
-        frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-        frame.BorderSizePixel = 0
-        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-        
-        local sideBar = Instance.new("Frame", frame)
-        sideBar.Size = UDim2.new(0, 6, 1, 0)
-        sideBar.BackgroundColor3 = color
-        sideBar.BorderSizePixel = 0
-        Instance.new("UICorner", sideBar).CornerRadius = UDim.new(0, 4)
-
-        local label = Instance.new("TextLabel", frame)
-        label.Size = UDim2.new(1, -20, 1, 0)
-        label.Position = UDim2.new(0, 15, 0, 0)
-        label.BackgroundTransparency = 1
-        label.Text = text
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextSize = 14
-        label.Font = Enum.Font.GothamMedium
-        label.TextXAlignment = Enum.TextXAlignment.Left
-
-        TweenService:Create(frame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -140, 0, 20)}):Play()
-        task.delay(2.5, function()
-            if frame and frame.Parent then
-                TweenService:Create(frame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -140, 0, -60)}):Play()
-                task.wait(0.3)
-                frame:Destroy()
-            end
-        end)
-    end)
 end
 
 -- ==================== ĐIỀU KHIỂN BAY (PHYSICS) ====================
@@ -167,12 +141,14 @@ local function farmTree(tree)
     local standPosition = treePos * CFrame.new(0, 8, -12) 
     moveTo(standPosition, 1.2)
     
+    setStatus("Đang thu hoạch cây ăn quả...")
     local startTime = tick()
     while isEnabled and not isDead(tree) and (tick() - startTime < CYCLE_TIME) do
         attack(treePos.Position)
     end
     
     if isDead(tree) then
+        setStatus("Cây đã hết quả, nhặt vật phẩm...")
         task.wait(WAIT_AFTER_LOOT)
     end
 end
@@ -183,7 +159,7 @@ local function teleportToNext()
     local point = TELEPORT_POINTS[currentPointIndex]
     
     if point and (point.Position - FORBIDDEN_ZONE).Magnitude > 150 then
-        notify("Đang di chuyển tới khu vực mới...", Color3.fromRGB(255, 200, 50))
+        setStatus("Hết cây, đang bay sang khu vực mới...")
         moveTo(point, 1.8)
         lastTeleportTime = tick()
         
@@ -216,11 +192,11 @@ end
 
 -- ==================== HỆ THỐNG TỰ ĐỘNG BÁN ĐỒ ====================
 local function goToShop()
-    notify("Kho đồ đầy! Đang đi bán...", Color3.fromRGB(255, 130, 0))
-    
+    setStatus("Túi đầy! Đang bay tới cổng dịch chuyển...")
     moveTo(SHOP_PORTAL_SHINRIN * CFrame.new(0, 4, -6), 2)
     task.wait(0.5)
     
+    setStatus("Đang bấm chuyển sang map Origins...")
     for i = 1, 5 do
         if clickButton("Origins", true) then 
             task.wait(3) 
@@ -229,9 +205,11 @@ local function goToShop()
         task.wait(0.5)
     end
     
+    setStatus("Đang bay tới Cửa hàng Origins...")
     moveTo(SHOP_POSITION * CFrame.new(0, 6, -6), 2)
     task.wait(0.5)
     
+    setStatus("Đang mở Cửa hàng và bán trái cây...")
     for i = 1, 5 do
         if clickButton("Store") or clickButton("Shop") then
             task.wait(0.5)
@@ -245,7 +223,7 @@ local function goToShop()
                     task.wait(0.2)
                 end
             end
-            notify("Đã bán sạch nông sản thành công!", Color3.fromRGB(0, 255, 100))
+            setStatus("Đã bán xong! Đang quay lại...")
             break
         end
         task.wait(0.5)
@@ -254,6 +232,7 @@ local function goToShop()
     task.wait(0.5)
     moveTo(SHOP_PORTAL_ORIGINS * CFrame.new(0, 4, -6), 2)
     task.wait(0.5)
+    setStatus("Đang bấm quay về map cũ (Shinrin)...")
     for i = 1, 5 do
         if clickButton("Shinrin", true) then
             task.wait(3)
@@ -270,15 +249,21 @@ local function startFarm()
     
     local loopCounter = 0
     while isEnabled do
-        if not getHRP() then task.wait(1); continue end
+        if not getHRP() then 
+            setStatus("Lỗi: Không tìm thấy nhân vật/rồng!", true)
+            task.wait(1)
+            continue 
+        end
         
         local trees = getTrees()
         if #trees == 0 then
+            setStatus("Đang tìm kiếm cây ăn quả...")
             task.wait(1)
             if isEnabled and #getTrees() == 0 then 
                 teleportToNext() 
             end
         else
+            setStatus("Tìm thấy " .. #trees .. " cây. Bắt đầu farm...")
             for _, tree in ipairs(trees) do
                 if not isEnabled then break end
                 farmTree(tree)
@@ -298,76 +283,99 @@ local function startFarm()
 end
 
 -- ==================== LOGIC BẬT TẮT CHUNG ====================
-local function toggleFarm(button)
+local function toggleFarm()
     isEnabled = not isEnabled
     if isEnabled then
         if not getHRP() then
-            notify("Lỗi: Không tìm thấy Rồng/Nhân vật!", Color3.fromRGB(255, 50, 50))
+            setStatus("Không tìm thấy Rồng hoặc Nhân vật để bật farm!", true)
             isEnabled = false
-            if button then button.BackgroundColor3 = Color3.fromRGB(235, 60, 60) button.Text = "AUTO: OFF" end
+            if mainButton then mainButton.BackgroundColor3 = Color3.fromRGB(235, 60, 60) mainButton.Text = "START FARM" end
             return
         end
-        if button then
-            button.BackgroundColor3 = Color3.fromRGB(60, 220, 110)
-            button.Text = "AUTO: ON"
+        if mainButton then
+            mainButton.BackgroundColor3 = Color3.fromRGB(60, 220, 110)
+            mainButton.Text = "STOP FARM"
         end
-        notify("BẮT ĐẦU AUTO FARM!", Color3.fromRGB(0, 255, 120))
         task.spawn(startFarm)
     else
         if currentTween then currentTween:Cancel(); currentTween = nil end
         disableFlight()
-        if button then
-            button.BackgroundColor3 = Color3.fromRGB(235, 60, 60)
-            button.Text = "AUTO: OFF"
+        if mainButton then
+            mainButton.BackgroundColor3 = Color3.fromRGB(235, 60, 60)
+            mainButton.Text = "START FARM"
         end
-        notify("ĐÃ TẮT AUTO FARM.", Color3.fromRGB(255, 70, 70))
+        setStatus("Đã tắt hệ thống Auto Farm.")
     end
 end
 
--- ==================== TẠO NÚT BẤM TRÊN MÀN HÌNH ====================
-local function createToggleUI()
-    -- Xóa UI cũ nếu có trùng lặp
-    local oldGui = LocalPlayer.PlayerGui:FindFirstChild("FarmToggleButtonGui")
+-- ==================== KHỞI TẠO UI THAO TÁC TRÊN MÀN HÌNH ====================
+local function createMobileUI()
+    local oldGui = LocalPlayer.PlayerGui:FindFirstChild("MobileFarmGui")
     if oldGui then oldGui:Destroy() end
 
     local gui = Instance.new("ScreenGui")
-    gui.Name = "FarmToggleButtonGui"
+    gui.Name = "MobileFarmGui"
     gui.ResetOnSpawn = false
     gui.Parent = LocalPlayer.PlayerGui
 
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(0, 110, 0, 50)
-    -- Vị trí nút ở cạnh phải góc giữa màn hình giúp dễ bấm trên mobile lẫn PC
-    button.Position = UDim2.new(0.85, 0, 0.45, 0) 
-    button.BackgroundColor3 = Color3.fromRGB(235, 60, 60)
-    button.Text = "AUTO: OFF"
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.Font = Enum.Font.GothamBold
-    button.TextSize = 15
-    button.Parent = gui
+    -- Khung nền chứa bảng điều khiển
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 220, 0, 95)
+    mainFrame.Position = UDim2.new(0.05, 0, 0.15, 0) -- Nằm bên góc trái màn hình để không vướng nút điều khiển của game
+    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    mainFrame.BackgroundTransparency = 0.2
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = gui
 
-    -- Bo tròn nút cho đẹp
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = button
+    local cornerFrame = Instance.new("UICorner")
+    cornerFrame.CornerRadius = UDim.new(0, 10)
+    cornerFrame.Parent = mainFrame
 
-    -- Viền bóng bẩy cho nút
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(255, 255, 255)
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.4
-    stroke.Parent = button
+    -- Viền bảng điều khiển
+    local strokeFrame = Instance.new("UIStroke")
+    strokeFrame.Color = Color3.fromRGB(255, 255, 255)
+    strokeFrame.Thickness = 1
+    strokeFrame.Transparency = 0.6
+    strokeFrame.Parent = mainFrame
 
-    -- Hiệu ứng kéo thả nút đi chỗ khác (Dành cho PC/Mobile nếu bị vướng màn hình)
+    -- Nút Bật/Tắt (Touch để thao tác)
+    mainButton = Instance.new("TextButton")
+    mainButton.Size = UDim2.new(1, -20, 0, 40)
+    mainButton.Position = UDim2.new(0, 10, 0, 10)
+    mainButton.BackgroundColor3 = Color3.fromRGB(235, 60, 60)
+    mainButton.Text = "START FARM"
+    mainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mainButton.Font = Enum.Font.GothamBold
+    mainButton.TextSize = 15
+    mainButton.Parent = mainFrame
+
+    local cornerBtn = Instance.new("UICorner")
+    cornerBtn.CornerRadius = UDim.new(0, 8)
+    cornerBtn.Parent = mainButton
+
+    -- Dòng văn bản in trạng thái (Thay thế lệnh print)
+    statusLogLabel = Instance.new("TextLabel")
+    statusLogLabel.Size = UDim2.new(1, -20, 0, 30)
+    statusLogLabel.Position = UDim2.new(0, 10, 0, 55)
+    statusLogLabel.BackgroundTransparency = 1
+    statusLogLabel.Text = " Trạng thái: Sẵn sàng cày!"
+    statusLogLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+    statusLogLabel.Font = Enum.Font.GothamMedium
+    statusLogLabel.TextSize = 11
+    statusLogLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLogLabel.TextWrapped = true
+    statusLogLabel.Parent = mainFrame
+
+    -- Tính năng Kéo thả bảng menu (Dùng ngón tay vuốt để di chuyển bảng nếu vướng)
     local dragging, dragInput, dragStart, startPos
-    button.InputBegan:Connect(function(input)
+    mainFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
-            startPos = button.Position
+            startPos = mainFrame.Position
         end
     end)
-    button.InputChanged:Connect(function(input)
+    mainFrame.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
@@ -375,7 +383,7 @@ local function createToggleUI()
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
@@ -384,20 +392,11 @@ local function createToggleUI()
         end
     end)
 
-    -- Sự kiện Click bật/tắt
-    button.MouseButton1Click:Connect(function()
-        toggleFarm(button)
-    end)
-
-    -- Đồng bộ hóa với phím Z
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.KeyCode == TOGGLE_KEY then
-            toggleFarm(button)
-        end
+    -- Sự kiện chạm tay (Click) vào nút trên Mobile
+    mainButton.MouseButton1Click:Connect(function()
+        toggleFarm()
     end)
 end
 
--- Khởi chạy giao diện nút bấm
-createToggleUI()
-notify("Đã tạo nút bấm bật/tắt trên màn hình!", Color3.fromRGB(100, 180, 255))
+-- Chạy giao diện điều khiển màn hình
+createMobileUI()
