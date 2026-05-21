@@ -4,8 +4,8 @@ javascript:(function(){
     /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH (CÓ LINK FORM) */
     const FIXED_DATA = {
         apk: "https://github.com/tiennood/tiennood.github.io/releases/download/apk/Delta-2.720.1167.apk",
-        File: `https://github.com/tiennood/tiennood.github.io/releases/download/apk/File.Manager_3.7.2_APKPure.apk`,
-        Script: `loadstring(game:HttpGet("https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/refs/heads/main/Farming"))()`,
+        script: `https://github.com/tiennood/tiennood.github.io/releases/download/apk/File.Manager_3.7.2_APKPure.apk`,
+        config: `loadstring(game:HttpGet("https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/refs/heads/main/Farming"))()`,
         form: "https://docs.google.com/forms/d/e/1FAIpQLSdCgmhwlNG8WBMigyLQlO5NCNL74lt5Uu16DgPDAY9jZhrogQ/viewform?usp=dialog"
     };
 
@@ -95,8 +95,8 @@ javascript:(function(){
             <div id="gh-dynamic-buttons" style="margin-bottom:10px;"></div>
             <div style="border-top:1px solid #333; padding-top:10px;">
                 <button id="btn-fix-apk" style="width:100%; background:#27ae60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán APK Delta</button>
-                <button id="btn-fix-script" style="width:100%; background:#8e44ad; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Script Lua</button>
-                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Load Config</button>
+                <button id="btn-fix-script" style="width:100%; background:#8e44ad; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Apk file</button>
+                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Script</button>
                 <button id="btn-fix-form" style="width:100%; background:#1f3a60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">Dán Google Form</button>
             </div>
             <button onclick="document.getElementById('gh-automation-ui').remove()" style="background:none; border:none; color:#555; cursor:pointer; width:100%; margin-top:10px; font-size:10px;">[ Thoát ]</button>
