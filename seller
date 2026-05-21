@@ -64,12 +64,22 @@ task.spawn(function()
             -- Mới max coins hoặc gửi lỗi thì mới gửi lệnh clearJobId (Không spam liên tục nữa)
             if not hasSentClear then
                 local success, err = pcall(function()
-                    req({
-                        Url = SHEETS_URL
-                            .. "?action=clearJobId"
-                            .. "&sellerName=" .. game:GetService("Players").LocalPlayer.Name,
-                        Method = "GET"
-                    })
+                    local coins =
+    game:GetService("Players")
+    .LocalPlayer
+    .Data
+    .Currency
+    .Coins
+    .Value
+
+req({
+    Url = SHEETS_URL
+        .. "?action=setJobId"
+        .. "&jobId=" .. game.JobId
+        .. "&sellerName=" .. game:GetService("Players").LocalPlayer.Name
+        .. "&coins=" .. tostring(coins),
+    Method = "GET"
+})
                 end)
                 if success then
                     hasSentClear = true
