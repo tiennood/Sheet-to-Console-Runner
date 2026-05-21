@@ -148,7 +148,7 @@ end
 local TRADE_CONFIG = {
     -- URL Google Apps Script (cùng URL deploy của hệ thống Key)
     -- Thay YOUR_DEPLOY_ID bằng ID thực
-    SHEETS_URL = "https://script.google.com/macros/s/AKfycbzkVtD4_ugHJXEAQ9yw6x3dRshEAimusg1mgLT8rZTAeamqVzhIL-QqOrb5fgdaLe7p/exec",
+    SHEETS_URL = "https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec?gid=46630860",
 
     -- Ngưỡng coins tối thiểu để bắt đầu trade
     COIN_THRESHOLD = 150000,
@@ -375,18 +375,78 @@ end
 -- GOOGLE SHEETS: FETCH SELLER JOBID
 -- =========================================
 local function fetchSellerInfo()
-    local ok, result = pcall(function()
-        if not httpRequest then return nil end
-        local response = httpRequest({
-            Url = TRADE_CONFIG.SHEETS_URL .. "?action=getJobId",
+
+    local success, result = pcall(function()
+
+        local response = request({
+            Url = SHEETS_URL .. "?action=getJobId",
             Method = "GET"
         })
-        if response and response.Body then
-            return HttpService:JSONDecode(response.Body)
+
+        if not response
+        or not response.Body then
+            return nil
         end
-        return nil
+
+        local decoded =
+            HttpService:JSONDecode(response.Body)
+
+        if type(decoded) ~= "table"
+        or #decoded == 0 then
+            return nil
+        end
+
+        -- lọc seller online
+        local onlineSellers = {}
+
+        for _, seller in ipairs(decoded) do
+
+            if seller.status == "online"
+            and seller.jobId ~= "" then
+
+                table.insert(
+                    onlineSellers,
+                    seller
+                )
+            end
+        end
+
+        if #onlineSellers == 0 then
+            return nil
+        end
+
+        -- sort coins cao nhất
+        table.sort(
+            onlineSellers,
+            function(a,b)
+
+                return tonumber(a.coins or 0)
+                    >
+                    tonumber(b.coins or 0)
+            end
+        )
+
+        local bestSeller =
+            onlineSellers[1]
+
+        print(
+            "[BUYER] BEST SELLER:",
+            bestSeller.seller,
+            "COINS:",
+            bestSeller.coins
+        )
+
+        return bestSeller
+
     end)
-    return ok and result or nil
+
+    if success then
+        return result
+    end
+
+    warn("[BUYER] fetchSellerInfo failed")
+
+    return nil
 end
 
 -- =========================================
