@@ -1,0 +1,419 @@
+--[[
+================================================================================
+A-SC 99% — SELLER ONLY
+- Chạy trên acc Seller duy nhất.
+- Tự gửi JobId lên Google Sheets cho Buyer fetch.
+- Tele vào Undercity → Bán + Claim coins liên tục (loop vô hạn).
+================================================================================
+]]
+wait(10);
+-- AUTO Mua apple replaced by conditional logic in runSellerLoop
+
+-- =================================================================================
+-- COINS MAX CHECK FLAG (100M = 100,000,000)
+-- =================================================================================
+local MAX_COINS = 100000000 -- 100M
+_G.COINS_MAXED = false      -- Cờ toàn cục, true = đã max coins
+
+task.spawn(function()
+    local lp = game:GetService("Players").LocalPlayer
+    local dataFolder = lp:WaitForChild("Data", 30)
+    if not dataFolder then warn("[COINS] ❌ Không tìm thấy Data folder!") return end
+    local currency = dataFolder:WaitForChild("Currency", 30)
+    if not currency then warn("[COINS] ❌ Không tìm thấy Currency folder!") return end
+    local coinsObj = currency:WaitForChild("Coins", 30)
+    if not coinsObj then warn("[COINS] ❌ Không tìm thấy Coins value!") return end
+
+    print("[COINS] ✅ Bắt đầu theo dõi số Coins (check mỗi 5s, max = " .. MAX_COINS .. ")")
+
+    while true do
+        local currentCoins = coinsObj.Value
+        if type(currentCoins) == "number" and currentCoins >= MAX_COINS then
+            if not _G.COINS_MAXED then
+                _G.COINS_MAXED = true
+                warn("[COINS] 🚨 ĐÃ MAX COINS (" .. currentCoins .. "/" .. MAX_COINS .. ")! DỪNG CLAIM + SELL + GỬI BLANK JOBID!")
+            end
+        else
+            if _G.COINS_MAXED then
+                _G.COINS_MAXED = false
+                print("[COINS] ✅ Coins đã giảm xuống (" .. tostring(currentCoins) .. "), tiếp tục hoạt động bình thường.")
+            end
+        end
+        task.wait(5)
+    end
+end)
+
+-- AUTO GỬI JOBID LÊN GOOGLE SHEETS (LOOP 1 PHÚT / LẦN)
+-- =================================================================================
+task.spawn(function()
+    -- THAY THẾ LINK SHEETS_URL CỦA BẠN VÀO ĐÂY (Link vừa Deploy xong)
+    local SHEETS_URL = "https://script.google.com/macros/s/AKfycbxITEMXKMQwK5j15A7XIPUd4NDWUVfZSuQ64FOPIedZdr4COAaXLGmQ7WSj676ypMtL/exec"
+    
+    local req = (syn and syn.request) or request or http_request
+    if not req then 
+        warn("[SELLER] ❌ Executor không hỗ trợ HttpRequest!")
+        return 
+    end
+    
+    print("[SELLER] 🔄 Đã bắt đầu Loop gửi JobId (60 giây/lần để giữ kết nối)...")
+    
+    local hasSentClear = false
+
+    while true do
+        if _G.COINS_MAXED then
+            -- Mới max coins hoặc gửi lỗi thì mới gửi lệnh clearJobId (Không spam liên tục nữa)
+            if not hasSentClear then
+                local success, err = pcall(function()
+                    req({
+                        Url = SHEETS_URL
+                            .. "?action=clearJobId"
+                            .. "&sellerName=" .. game:GetService("Players").LocalPlayer.Name,
+                        Method = "GET"
+                    })
+                end)
+                if success then
+                    hasSentClear = true
+                    warn("[SELLER] 🚨 MAX COINS → Đã gửi lệnh CLEAR JobId 1 LẦN DUY NHẤT để tiết kiệm request!")
+                else
+                    warn("[SELLER] ❌ Lỗi gửi clearJobId: " .. tostring(err))
+                end
+            end
+        else
+            -- Khi coins tụt xuống bình thường, reset cờ hasSentClear để sẵn sàng cho lần max tiếp theo
+            hasSentClear = false
+            
+            -- Chưa max → Bắt buộc phải gửi JobId mỗi 60s làm Heartbeat (Giữ máy chủ không xóa data sau 5p)
+            local success, err = pcall(function()
+                req({
+                    Url = SHEETS_URL
+                        .. "?action=setJobId"
+                        .. "&jobId=" .. game.JobId
+                        .. "&sellerName=" .. game:GetService("Players").LocalPlayer.Name,
+                    Method = "GET"
+                })
+            end)
+            if success then
+                print("[SELLER] ✅ JobId đã cập nhật lên Server: " .. game.JobId)
+            else
+                warn("[SELLER] ❌ Lỗi gửi JobId: " .. tostring(err))
+            end
+        end
+        
+        -- Luôn đợi 60s cho vòng lặp tiếp theo
+        task.wait(60)
+    end
+end)
+
+
+-- =================================================================================
+-- CẤU HÌNH (SỬA Ở ĐÂY)
+-- =================================================================================
+local CONFIG = {
+-- Vật phẩm bán
+ITEM_NAME = "Apple",
+ITEM_TYPE = "Resources",
+ITEM_AMOUNT = 10,
+ITEM_PRICE = 50000,
+
+-- Tên những người chơi cần Auto Buy 5 đồ market liên tục cho đến khi out sv (Thêm nhiều tên vào bảng)
+TARGET_BUYER_NAMES = {"PurpleVictoria32", "hkplayer3s", "hkplayer2s", "hkplayer1s", "s", "s", "s", "s"},
+
+-- Tốc độ (giây)
+CLAIM_SPEED = 0.3,
+SELL_SPEED = 0.3,
+
+-- Undercity PlaceId
+UNDERCITY_ID = 4601778915,
+}
+
+-- =================================================================================
+-- SERVICES
+-- =================================================================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- =================================================================================
+-- REMOTE FUNCTIONS
+-- =================================================================================
+
+local function teleportUndercity()
+ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.UNDERCITY_ID, {})
+end
+
+local function sellItem()
+ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SellPlayerMarketRemote"):InvokeServer({
+Price = CONFIG.ITEM_PRICE,
+ItemType = CONFIG.ITEM_TYPE,
+Name = CONFIG.ITEM_NAME,
+Amount = CONFIG.ITEM_AMOUNT
+})
+end
+
+local function claimCoins(slotIndex)
+ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimPlayerMarketRemote"):FireServer(tostring(slotIndex))
+end
+
+-- =================================================================================
+-- SELLER LOOP (KIỂM TRA DATA + BÁN + CLAIM)
+-- =================================================================================
+local function runSellerLoop()
+print(">>> [SELLER] " .. LocalPlayer.Name .. " - Auto Check, Claim & Sell (LOOP 2s)")
+
+-- =================================================================================
+-- LUỒNG 2: AUTO REJOIN UNDERCITY 60 PHÚT CÓ BỘ ĐẾM GIỜ & UI
+-- =================================================================================
+task.spawn(function()
+local hopTime = 3600 -- 60 phút
+local startTime = os.time()
+
+local CoreGui = game:GetService("CoreGui")
+if CoreGui:FindFirstChild("ServerHopUI") then CoreGui.ServerHopUI:Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name = "ServerHopUI"
+
+local Main = Instance.new("Frame", ScreenGui)
+Main.Size = UDim2.new(0, 260, 0, 52)
+Main.Position = UDim2.new(0.5, -130, 0, 10)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Main.BackgroundTransparency = 0.4
+Main.BorderSizePixel = 0
+local corner = Instance.new("UICorner", Main)
+corner.CornerRadius = UDim.new(0, 6)
+
+local TimeLabel = Instance.new("TextLabel", Main)
+TimeLabel.Size = UDim2.new(1, 0, 0.5, 0)
+TimeLabel.Position = UDim2.new(0, 0, 0, 0)
+TimeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TimeLabel.Font = Enum.Font.GothamBold
+TimeLabel.TextSize = 14
+TimeLabel.BackgroundTransparency = 1
+TimeLabel.Text = "⏳ Rejoin: 60:00"
+
+local CoinsLabel = Instance.new("TextLabel", Main)
+CoinsLabel.Size = UDim2.new(1, 0, 0.5, 0)
+CoinsLabel.Position = UDim2.new(0, 0, 0.5, 0)
+CoinsLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+CoinsLabel.Font = Enum.Font.GothamBold
+CoinsLabel.TextSize = 13
+CoinsLabel.BackgroundTransparency = 1
+CoinsLabel.Text = "💰 Coins: ..."
+
+local function formatNumber(n)
+    local s = tostring(math.floor(n))
+    local formatted = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if formatted:sub(1,1) == "," then formatted = formatted:sub(2) end
+    return formatted
+end
+
+while true do
+task.wait(1)
+local elapsed = os.time() - startTime
+local remaining = hopTime - elapsed
+
+-- Cập nhật Coins hiển thị
+pcall(function()
+    local coinsVal = LocalPlayer:FindFirstChild("Data")
+        and LocalPlayer.Data:FindFirstChild("Currency")
+        and LocalPlayer.Data.Currency:FindFirstChild("Coins")
+    if coinsVal then
+        local c = coinsVal.Value
+        if _G.COINS_MAXED then
+            CoinsLabel.Text = "🚨 COINS MAX: " .. formatNumber(c)
+            CoinsLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+        else
+            CoinsLabel.Text = "💰 Coins: " .. formatNumber(c)
+            CoinsLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        end
+    end
+end)
+
+if remaining > 0 then
+local m = math.floor(remaining / 60)
+local s = remaining % 60
+TimeLabel.Text = string.format("⏳ Rejoin Undercity: %02d:%02d", m, s)
+if remaining <= 60 then
+    TimeLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+end
+if remaining % 60 == 0 and remaining ~= hopTime then
+    print(string.format("[SELLER] ⏳ Hẹn giờ Rejoin: Còn %d phút %d giây...", m, s))
+end
+else
+TimeLabel.Text = "🚨 ĐANG REJOIN SERVER..."
+TimeLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+print("[SELLER] 🔄 Đã đủ 60 phút, tiến hành tele lại Undercity...")
+pcall(function()
+local args = {
+	3475397644,
+	{}
+}
+game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(unpack(args))
+end)
+task.wait(999)
+end
+end
+end)
+
+-- =================================================================================
+-- LUỒNG 3: AUTO BUY 5 MÓN TỪ PLAYER ĐƯỢC CHỈ ĐỊNH (HỖ TRỢ NHIỀU NGƯỜI)
+-- =================================================================================
+task.spawn(function()
+    local activePurchases = {} -- Theo dõi các player đang được mua hàng để tránh lặp task
+
+    while true do
+        if CONFIG.TARGET_BUYER_NAMES and #CONFIG.TARGET_BUYER_NAMES > 0 then
+            for _, name in ipairs(CONFIG.TARGET_BUYER_NAMES) do
+                if name ~= "" then
+                    local targetPlayer = Players:FindFirstChild(name)
+                    if targetPlayer and not activePurchases[name] then
+                        activePurchases[name] = true
+                        
+                        task.spawn(function()
+                            print("[SELLER] 🛒 Thấy player " .. name .. " trong server! Bắt đầu auto mua hàng market...")
+                            local purchaseMarketRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchasePlayerMarketRemote", 10)
+                            
+                            if purchaseMarketRemote then
+                                while Players:FindFirstChild(name) do
+                                    for i = 1, 5 do
+                                        local success, err = pcall(function()
+                                            if purchaseMarketRemote:IsA("RemoteFunction") then
+                                                purchaseMarketRemote:InvokeServer({
+                                                    Index = tostring(i),
+                                                    Player = targetPlayer
+                                                })
+                                            else
+                                                purchaseMarketRemote:FireServer({
+                                                    Index = tostring(i),
+                                                    Player = targetPlayer
+                                                })
+                                            end
+                                        end)
+                                        if not success and i == 1 then
+                                            warn("[SELLER] ❌ Lỗi khi mua hàng từ " .. name .. ": " .. tostring(err))
+                                        end
+                                    end
+                                    task.wait(0.5) -- Spam lệnh mua mỗi 0.5s để clear hàng nhanh nhất
+                                end
+                            end
+                            
+                            print("[SELLER] ❌ Player " .. name .. " đã rời server, ngừng auto buy.")
+                            activePurchases[name] = nil
+                        end)
+                    end
+                end
+            end
+        end
+        task.wait(5) -- Kiểm tra danh sách mỗi 5s
+    end
+end)
+
+-- Luồng 1 (Ban đầu): Tự động Buy Apple, Sell lên kệ & Claim Coins
+task.spawn(function()
+while true do
+local success, err = pcall(function()
+local dataFolder = LocalPlayer:FindFirstChild("Data")
+if not dataFolder then return end
+
+-- 1. Kiểm tra Data & Mua/Bán Apple để chừa chỗ
+    local appleNode = dataFolder:FindFirstChild("Resources") and dataFolder.Resources:FindFirstChild("Apple")
+    if appleNode then
+        local currentApple = appleNode.Value
+        if type(currentApple) == "number" then
+            if not _G.COINS_MAXED then
+                -- Khi CHƯA max coins → Nếu bị cạn táo thì mua thêm bằng NPC
+                if currentApple < 5000 then
+                    local args = {{ ItemName = "Apple", Amount = 4000 }}
+                    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchaseItemRemote"):FireServer(unpack(args))
+                end
+            else
+                -- Khi ĐÃ max coins → Túi đầy táo (vượt 6000) thì Bán bớt cho NPC để lấy không gian
+                -- Để tha hồ có chỗ mua làm dịch vụ dọn market từ TARGET_BUYER_NAMES
+                if currentApple > 6000 then
+                    local amountToSell = currentApple - 6000
+                    local args = {{ ItemName = "Apple", Amount = amountToSell }}
+                    pcall(function()
+                        local sellRemote = ReplicatedStorage:WaitForChild("Remotes"):FindFirstChild("SellItemRemote")
+                        if sellRemote then
+                            if sellRemote:IsA("RemoteFunction") then
+                                sellRemote:InvokeServer(unpack(args))
+                            else
+                                sellRemote:FireServer(unpack(args))
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
+-- 2. Kiểm tra Data & Sell Item + Claim
+local playerMarket = dataFolder:FindFirstChild("PlayerMarket")
+if playerMarket then
+for i = 1, 5 do
+local slot = playerMarket:FindFirstChild(tostring(i))
+if slot then
+local purchasedNode = slot:FindFirstChild("Purchased")
+-- Trạng thái kệ đã có người mua (ô vuông có dấu tích) -> Nhận Tiền
+if purchasedNode and purchasedNode.Value == true then
+if not _G.COINS_MAXED then
+    claimCoins(i)
+end
+end
+end
+end
+
+-- Sau khi quét qua nhận tiền, ta đẩy 5 lệnh bán lên PlayerMarket
+-- Lệnh sẽ tự động lấp đầy các vị trí trống (nếu kệ đã đầy đủ 5 món thì server tự chặn, hoàn toàn không gây bug)
+if not _G.COINS_MAXED then
+    task.spawn(function()
+    for _ = 1, 5 do
+    sellItem()
+    task.wait(0.1)
+    end
+    end)
+end
+end
+end)
+
+if not success then
+warn("[SELLER] Lỗi trong loop 2s: ", err)
+end
+
+task.wait(2)
+end
+end)
+end
+
+-- =================================================================================
+-- MAIN EXECUTION
+-- =================================================================================
+
+-- STEP 1: Đợi character load
+if not game:IsLoaded() then game.Loaded:Wait() end
+while not LocalPlayer.Character or not LocalPlayer.Character.Parent do
+LocalPlayer.CharacterAdded:Wait()
+end
+LocalPlayer.Character:WaitForChild("HumanoidRootPart", 30)
+task.wait(2)
+
+print("[SELLER] ✅ Character loaded: " .. LocalPlayer.Name)
+
+-- STEP 2: Tele vào Undercity (nếu chưa ở đó)
+if game.PlaceId ~= CONFIG.UNDERCITY_ID then
+print("[SELLER] 🚀 Teleporting to Undercity...")
+teleportUndercity()
+-- Sau khi tele, game sẽ reload → script chạy lại từ đầu (auto-execute)
+task.wait(999999)
+return
+end
+
+-- STEP 3: Đã ở Undercity → Chạy Sell + Claim loop vô hạn
+print("[SELLER] ✅ Đang ở Undercity → BẮT ĐẦU BÁN + CLAIM LIÊN TỤC!")
+runSellerLoop()
+
+-- Giữ script sống
+while true do
+task.wait(60)
+print("[SELLER] 🔄 Vẫn đang chạy... Coins sẽ tự claim.")
+end
