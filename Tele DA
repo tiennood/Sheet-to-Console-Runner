@@ -1,0 +1,68 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- ===== TELEPORT =====
+local function tele(x, y, z)
+    local char = player.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(x, y, z)
+    end
+end
+
+-- ===== GUI =====
+local sg = Instance.new("ScreenGui")
+sg.Parent = player:WaitForChild("PlayerGui")
+sg.Name = "MiniTeleportMenu"
+sg.ResetOnSpawn = false
+
+local frame = Instance.new("Frame")
+frame.Parent = sg
+frame.Size = UDim2.new(0, 330, 0, 120)
+frame.Position = UDim2.new(1, -340, 0.2, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Active = true
+frame.Draggable = true
+Instance.new("UICorner", frame)
+
+local layout = Instance.new("UIGridLayout")
+layout.Parent = frame
+layout.CellSize = UDim2.new(0, 95, 0, 40)
+layout.CellPadding = UDim2.new(0, 10, 0, 10)
+
+-- ===== BUTTON =====
+local function createBtn(text, x, y, z, color)
+    local btn = Instance.new("TextButton")
+    btn.Parent = frame
+    btn.Text = text
+    btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 60)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", btn)
+
+    btn.MouseButton1Click:Connect(function()
+        tele(x, y, z)
+    end)
+end
+
+-- ===== TELEPORTS =====
+createBtn("🗺 Map", -143.17, 136.41, -90.28, Color3.fromRGB(0,120,215))
+
+createBtn("🤝 Trade", -1000.12, 357.23, -601.38, Color3.fromRGB(200,120,0))
+
+createBtn("🚧 Giới hạn", -1259.12, 312.86, -1948.69, Color3.fromRGB(180,50,50))
+
+-- ===== TOGGLE =====
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Parent = sg
+toggleBtn.Size = UDim2.new(0, 60, 0, 30)
+toggleBtn.Position = UDim2.new(1, -70, 0, 5)
+toggleBtn.Text = "MENU"
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleBtn.TextColor3 = Color3.new(1,1,1)
+toggleBtn.ZIndex = 999
+Instance.new("UICorner", toggleBtn)
+
+toggleBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
