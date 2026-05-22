@@ -20,7 +20,7 @@ frame.Parent = sg
 frame.Size = UDim2.new(0, 330, 0, 120)
 
 -- Góc trái
-frame.Position = UDim2.new(0, 10, 0.2, 0)
+frame.Position = UDim2.new(0, 10, 0, 40)
 
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 
