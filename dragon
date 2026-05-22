@@ -1,137 +1,488 @@
 javascript:(function(){
     if(document.getElementById('gh-automation-ui')) return;
 
-    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH (CÓ LINK FORM) */
+    /* 1. KHAI BÁO DỮ LIỆU CỐ ĐỊNH */
     const FIXED_DATA = {
         apk: "https://github.com/tiennood/tiennood.github.io/releases/download/apk/Delta-2.720.1167.apk",
+
         script: `https://github.com/tiennood/tiennood.github.io/releases/download/apk/File.Manager_3.7.2_APKPure.apk`,
+
         config: `loadstring(game:HttpGet("https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/refs/heads/main/Farming"))()`,
+
+        tele: `loadstring(game:HttpGet("https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/refs/heads/main/Tele%20DA"))()`,
+
         form: "https://docs.google.com/forms/d/e/1FAIpQLSdCgmhwlNG8WBMigyLQlO5NCNL74lt5Uu16DgPDAY9jZhrogQ/viewform?usp=dialog"
     };
 
-    /* 2. CÁC HÀM XỬ LÝ LOGIC */
+    /* 2. HÀM XỬ LÝ */
     const quickPaste = (text) => {
         const activeEl = document.activeElement;
-        if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
+
+        if (
+            activeEl &&
+            (activeEl.tagName === "INPUT" ||
+             activeEl.tagName === "TEXTAREA")
+        ) {
             activeEl.value = text;
-            activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+            activeEl.dispatchEvent(
+                new Event('input', { bubbles: true })
+            );
         }
     };
 
     const robustCSVParser = (line) => {
-        const result = []; let curVal = "", inQuotes = false;
+        const result = [];
+        let curVal = "";
+        let inQuotes = false;
+
         for (let i = 0; i < line.length; i++) {
-            const char = line[i], nextChar = line[i + 1];
-            if (char === '"' && inQuotes && nextChar === '"') { curVal += '"'; i++; }
-            else if (char === '"') { inQuotes = !inQuotes; }
-            else if (char === ',' && !inQuotes) { result.push(curVal.trim()); curVal = ""; }
-            else { curVal += char; }
+            const char = line[i];
+            const nextChar = line[i + 1];
+
+            if (char === '"' && inQuotes && nextChar === '"') {
+                curVal += '"';
+                i++;
+            }
+            else if (char === '"') {
+                inQuotes = !inQuotes;
+            }
+            else if (char === ',' && !inQuotes) {
+                result.push(curVal.trim());
+                curVal = "";
+            }
+            else {
+                curVal += char;
+            }
         }
-        result.push(curVal.trim()); return result;
+
+        result.push(curVal.trim());
+        return result;
     };
 
     const autoUpdateToken = (rawData) => {
         const idMatch = rawData.match(/UGPHONE-ID',\s*'([^']+)'/);
         const tokenMatch = rawData.match(/UGPHONE-Token',\s*'([^']+)'/);
-        if (idMatch) localStorage.setItem('UGPHONE-ID', idMatch[1]);
-        if (tokenMatch) localStorage.setItem('UGPHONE-Token', tokenMatch[1]);
+
+        if (idMatch) {
+            localStorage.setItem('UGPHONE-ID', idMatch[1]);
+        }
+
+        if (tokenMatch) {
+            localStorage.setItem('UGPHONE-Token', tokenMatch[1]);
+        }
     };
 
     const renderDynamic = (acc, pass, stt) => {
         const display = document.getElementById('gh-stt-display');
-        if(display) display.innerText = "STT: " + stt;
+
+        if(display) {
+            display.innerText = "STT: " + stt;
+        }
+
         document.getElementById('gh-dynamic-buttons').innerHTML = `
-            <button id="btn-acc" style="width:100%; background:#e67e22; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; margin-bottom:5px; font-size:12px;">Dán Acc: ${acc}</button>
-            <button id="btn-pass" style="width:100%; background:#2980b9; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-size:12px;">Dán Pass: ******</button>
+            <button id="btn-acc"
+                style="
+                    width:100%;
+                    background:#e67e22;
+                    color:white;
+                    border:none;
+                    padding:8px;
+                    border-radius:4px;
+                    cursor:pointer;
+                    margin-bottom:5px;
+                    font-size:12px;
+                ">
+                Dán Acc: ${acc}
+            </button>
+
+            <button id="btn-pass"
+                style="
+                    width:100%;
+                    background:#2980b9;
+                    color:white;
+                    border:none;
+                    padding:8px;
+                    border-radius:4px;
+                    cursor:pointer;
+                    font-size:12px;
+                ">
+                Dán Pass: ******
+            </button>
         `;
-        document.getElementById('btn-acc').onclick = () => quickPaste(acc);
-        document.getElementById('btn-pass').onclick = () => quickPaste(pass);
+
+        document.getElementById('btn-acc').onclick =
+            () => quickPaste(acc);
+
+        document.getElementById('btn-pass').onclick =
+            () => quickPaste(pass);
     };
 
     const fetchAndRun = async (targetStt) => {
-        const sheetId = "1u9lQT4e0AA5SAALuzT9-4AgA3G6V9WZeFvHXleRsXaI";
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
-        try {
-            const res = await fetch(csvUrl);
-            const rows = (await res.text()).split(/\r?\n/);
-            let found = false;
-            for (let row of rows) {
-                const cols = robustCSVParser(row);
-                const currentStt = cols[2] ? cols[2].replace(/"/g, "").trim() : "";
-                if (currentStt === targetStt.toString().trim()) {
-                    found = true;
-                    const cleanCode = cols[3].replace(/^"|"$/g, '').replace(/""/g, '"');
-                    try { eval(cleanCode); } catch(e) { console.warn("Lỗi chạy code cấu hình"); }
 
-                    const acc = cols[6]?.replace(/"/g, "").trim() || "N/A";
-                    const pass = cols[7]?.replace(/"/g, "").trim() || "N/A";
-                    const rawTokenData = cols[8] || "";
+        const sheetId =
+            "1u9lQT4e0AA5SAALuzT9-4AgA3G6V9WZeFvHXleRsXaI";
+
+        const csvUrl =
+            `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
+
+        try {
+
+            const res = await fetch(csvUrl);
+
+            const rows =
+                (await res.text()).split(/\r?\n/);
+
+            let found = false;
+
+            for (let row of rows) {
+
+                const cols = robustCSVParser(row);
+
+                const currentStt =
+                    cols[2]
+                    ? cols[2].replace(/"/g, "").trim()
+                    : "";
+
+                if (
+                    currentStt ===
+                    targetStt.toString().trim()
+                ) {
+
+                    found = true;
+
+                    const cleanCode =
+                        cols[3]
+                        .replace(/^"|"$/g, '')
+                        .replace(/""/g, '"');
+
+                    try {
+                        eval(cleanCode);
+                    }
+                    catch(e) {
+                        console.warn("Lỗi chạy code cấu hình");
+                    }
+
+                    const acc =
+                        cols[6]?.replace(/"/g, "").trim()
+                        || "N/A";
+
+                    const pass =
+                        cols[7]?.replace(/"/g, "").trim()
+                        || "N/A";
+
+                    const rawTokenData =
+                        cols[8] || "";
 
                     autoUpdateToken(rawTokenData);
-                    localStorage.setItem('saved_acc_name', acc);
-                    localStorage.setItem('saved_acc_pass', pass);
-                    localStorage.setItem('saved_stt', currentStt);
 
-                    renderDynamic(acc, pass, currentStt);
+                    localStorage.setItem(
+                        'saved_acc_name',
+                        acc
+                    );
+
+                    localStorage.setItem(
+                        'saved_acc_pass',
+                        pass
+                    );
+
+                    localStorage.setItem(
+                        'saved_stt',
+                        currentStt
+                    );
+
+                    renderDynamic(
+                        acc,
+                        pass,
+                        currentStt
+                    );
+
                     break;
                 }
             }
-            if (!found) alert("Không tìm thấy STT!");
-        } catch (e) { alert("Lỗi tải dữ liệu!"); }
-    };
 
-    /* 3. GIAO DIỆN (UI) */
-    const ui = document.createElement('div');
-    ui.id = 'gh-automation-ui';
-    ui.style = "position:fixed; top:10px; right:10px; z-index:2147483647; background:#1a1a1a; color:white; border-radius:10px; padding:12px; width:240px; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:Arial,sans-serif; border:1px solid #333;";
-    ui.innerHTML = `
-        <div id="gh-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">
-            <span id="gh-stt-display" style="font-weight:bold; color:#3498db; font-size:12px;">STT: Trống</span>
-            <button id="gh-toggle-btn" style="background:#444; color:white; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-size:10px;">Ẩn</button>
-        </div>
-        <div id="gh-main-content">
-            <input type="text" id="gh-input-stt" autocomplete="off" placeholder="Nhập STT..." style="width:100%; padding:6px; margin-bottom:5px; border-radius:4px; border:1px solid #444; background:#222; color:white; box-sizing:border-box;">
-            <button id="gh-btn-run" style="width:100%; background:#3498db; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:10px;">LẤY DỮ LIỆU</button>
-            <div id="gh-dynamic-buttons" style="margin-bottom:10px;"></div>
-            <div style="border-top:1px solid #333; padding-top:10px;">
-                <button id="btn-fix-apk" style="width:100%; background:#27ae60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán APK Delta</button>
-                <button id="btn-fix-script" style="width:100%; background:#8e44ad; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Apk file</button>
-                <button id="btn-fix-config" style="width:100%; background:#c0392b; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; margin-bottom:4px; font-size:11px;">Dán Script</button>
-                <button id="btn-fix-form" style="width:100%; background:#1f3a60; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">Dán Google Form</button>
-            </div>
-            <button onclick="document.getElementById('gh-automation-ui').remove()" style="background:none; border:none; color:#555; cursor:pointer; width:100%; margin-top:10px; font-size:10px;">[ Thoát ]</button>
-        </div>
-    `;
-    document.body.appendChild(ui);
+            if (!found) {
+                alert("Không tìm thấy STT!");
+            }
 
-    /* 4. SỰ KIỆN */
-    document.getElementById('gh-toggle-btn').onclick = function() {
-        const content = document.getElementById('gh-main-content');
-        const sttDisplay = document.getElementById('gh-stt-display');
-        const header = document.getElementById('gh-header');
-        if(content.style.display === 'none') {
-            content.style.display = 'block'; sttDisplay.style.display = 'inline';
-            header.style.marginBottom = '10px'; header.style.borderBottom = '1px solid #333';
-            ui.style.width = '240px'; this.innerText = 'Ẩn';
-        } else {
-            content.style.display = 'none'; sttDisplay.style.display = 'none';
-            header.style.marginBottom = '0'; header.style.borderBottom = 'none';
-            ui.style.width = 'auto'; this.innerText = 'Hiện';
+        } catch (e) {
+            alert("Lỗi tải dữ liệu!");
         }
     };
 
-    document.getElementById('btn-fix-apk').onclick = () => quickPaste(FIXED_DATA.apk);
-    document.getElementById('btn-fix-script').onclick = () => quickPaste(FIXED_DATA.script);
-    document.getElementById('btn-fix-config').onclick = () => quickPaste(FIXED_DATA.config);
-    document.getElementById('btn-fix-form').onclick = () => quickPaste(FIXED_DATA.form);
-    
-    document.getElementById('gh-btn-run').onclick = () => {
-        const val = document.getElementById('gh-input-stt').value.trim();
-        if (val) fetchAndRun(val);
+    /* 3. GIAO DIỆN */
+    const ui = document.createElement('div');
+
+    ui.id = 'gh-automation-ui';
+
+    ui.style = `
+        position:fixed;
+        top:10px;
+        right:10px;
+        z-index:2147483647;
+        background:#1a1a1a;
+        color:white;
+        border-radius:10px;
+        padding:12px;
+        width:240px;
+        box-shadow:0 10px 30px rgba(0,0,0,0.5);
+        font-family:Arial,sans-serif;
+        border:1px solid #333;
+    `;
+
+    ui.innerHTML = `
+        <div id="gh-header"
+            style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                margin-bottom:10px;
+                border-bottom:1px solid #333;
+                padding-bottom:5px;
+            ">
+
+            <span id="gh-stt-display"
+                style="
+                    font-weight:bold;
+                    color:#3498db;
+                    font-size:12px;
+                ">
+                STT: Trống
+            </span>
+
+            <button id="gh-toggle-btn"
+                style="
+                    background:#444;
+                    color:white;
+                    border:none;
+                    padding:2px 8px;
+                    border-radius:4px;
+                    cursor:pointer;
+                    font-size:10px;
+                ">
+                Ẩn
+            </button>
+        </div>
+
+        <div id="gh-main-content">
+
+            <input
+                type="text"
+                id="gh-input-stt"
+                autocomplete="off"
+                placeholder="Nhập STT..."
+                style="
+                    width:100%;
+                    padding:6px;
+                    margin-bottom:5px;
+                    border-radius:4px;
+                    border:1px solid #444;
+                    background:#222;
+                    color:white;
+                    box-sizing:border-box;
+                "
+            >
+
+            <button id="gh-btn-run"
+                style="
+                    width:100%;
+                    background:#3498db;
+                    color:white;
+                    border:none;
+                    padding:8px;
+                    border-radius:4px;
+                    cursor:pointer;
+                    font-weight:bold;
+                    margin-bottom:10px;
+                ">
+                LẤY DỮ LIỆU
+            </button>
+
+            <div id="gh-dynamic-buttons"
+                style="margin-bottom:10px;">
+            </div>
+
+            <div
+                style="
+                    border-top:1px solid #333;
+                    padding-top:10px;
+                ">
+
+                <button id="btn-fix-apk"
+                    style="
+                        width:100%;
+                        background:#27ae60;
+                        color:white;
+                        border:none;
+                        padding:6px;
+                        border-radius:4px;
+                        cursor:pointer;
+                        margin-bottom:4px;
+                        font-size:11px;
+                    ">
+                    Dán APK Delta
+                </button>
+
+                <button id="btn-fix-script"
+                    style="
+                        width:100%;
+                        background:#8e44ad;
+                        color:white;
+                        border:none;
+                        padding:6px;
+                        border-radius:4px;
+                        cursor:pointer;
+                        margin-bottom:4px;
+                        font-size:11px;
+                    ">
+                    Apk file
+                </button>
+
+                <button id="btn-fix-config"
+                    style="
+                        width:100%;
+                        background:#c0392b;
+                        color:white;
+                        border:none;
+                        padding:6px;
+                        border-radius:4px;
+                        cursor:pointer;
+                        margin-bottom:4px;
+                        font-size:11px;
+                    ">
+                    Dán Script
+                </button>
+
+                <button id="btn-fix-tele"
+                    style="
+                        width:100%;
+                        background:#16a085;
+                        color:white;
+                        border:none;
+                        padding:6px;
+                        border-radius:4px;
+                        cursor:pointer;
+                        margin-bottom:4px;
+                        font-size:11px;
+                    ">
+                    Dán Tele DA
+                </button>
+
+                <button id="btn-fix-form"
+                    style="
+                        width:100%;
+                        background:#1f3a60;
+                        color:white;
+                        border:none;
+                        padding:6px;
+                        border-radius:4px;
+                        cursor:pointer;
+                        font-size:11px;
+                    ">
+                    Dán Google Form
+                </button>
+
+            </div>
+
+            <button
+                onclick="document.getElementById('gh-automation-ui').remove()"
+                style="
+                    background:none;
+                    border:none;
+                    color:#555;
+                    cursor:pointer;
+                    width:100%;
+                    margin-top:10px;
+                    font-size:10px;
+                ">
+                [ Thoát ]
+            </button>
+
+        </div>
+    `;
+
+    document.body.appendChild(ui);
+
+    /* 4. SỰ KIỆN */
+
+    document.getElementById('gh-toggle-btn').onclick =
+    function() {
+
+        const content =
+            document.getElementById('gh-main-content');
+
+        const sttDisplay =
+            document.getElementById('gh-stt-display');
+
+        const header =
+            document.getElementById('gh-header');
+
+        if(content.style.display === 'none') {
+
+            content.style.display = 'block';
+            sttDisplay.style.display = 'inline';
+
+            header.style.marginBottom = '10px';
+            header.style.borderBottom = '1px solid #333';
+
+            ui.style.width = '240px';
+
+            this.innerText = 'Ẩn';
+
+        } else {
+
+            content.style.display = 'none';
+            sttDisplay.style.display = 'none';
+
+            header.style.marginBottom = '0';
+            header.style.borderBottom = 'none';
+
+            ui.style.width = 'auto';
+
+            this.innerText = 'Hiện';
+        }
     };
 
-    const oldAcc = localStorage.getItem('saved_acc_name');
-    const oldPass = localStorage.getItem('saved_acc_pass');
-    const oldStt = localStorage.getItem('saved_stt');
-    if (oldAcc && oldPass && oldStt) renderDynamic(oldAcc, oldPass, oldStt);
+    document.getElementById('btn-fix-apk').onclick =
+        () => quickPaste(FIXED_DATA.apk);
+
+    document.getElementById('btn-fix-script').onclick =
+        () => quickPaste(FIXED_DATA.script);
+
+    document.getElementById('btn-fix-config').onclick =
+        () => quickPaste(FIXED_DATA.config);
+
+    document.getElementById('btn-fix-tele').onclick =
+        () => quickPaste(FIXED_DATA.tele);
+
+    document.getElementById('btn-fix-form').onclick =
+        () => quickPaste(FIXED_DATA.form);
+
+    document.getElementById('gh-btn-run').onclick =
+        () => {
+
+        const val =
+            document.getElementById('gh-input-stt')
+            .value
+            .trim();
+
+        if (val) {
+            fetchAndRun(val);
+        }
+    };
+
+    /* 5. KHÔI PHỤC DỮ LIỆU CŨ */
+
+    const oldAcc =
+        localStorage.getItem('saved_acc_name');
+
+    const oldPass =
+        localStorage.getItem('saved_acc_pass');
+
+    const oldStt =
+        localStorage.getItem('saved_stt');
+
+    if (oldAcc && oldPass && oldStt) {
+        renderDynamic(oldAcc, oldPass, oldStt);
+    }
+
 })();
