@@ -107,34 +107,36 @@ toggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- =====================================
--- COIN DISPLAY
+-- COIN DISPLAY (GÓC DƯỚI TRÁI)
 -- =====================================
 
-local coinFrame = Instance.new("Frame")
-coinFrame.Parent = sg
+local label = Instance.new("TextLabel")
+label.Parent = sg
 
-coinFrame.Size = UDim2.new(0, 170, 0, 35)
-coinFrame.Position = UDim2.new(0, 80, 0, 5)
+label.Size = UDim2.new(0, 250, 0, 50)
 
-coinFrame.BackgroundColor3 =
-    Color3.fromRGB(20,20,20)
+-- Góc dưới bên trái
+label.Position = UDim2.new(0, 10, 1, -60)
 
-coinFrame.BorderSizePixel = 0
+label.BackgroundTransparency = 0.3
+label.TextScaled = true
+label.TextColor3 = Color3.new(1,1,1)
 
-Instance.new("UICorner", coinFrame)
+-- coin value
+local coins =
+    player.Data.Currency.Coins
 
-local coinLabel = Instance.new("TextLabel")
-coinLabel.Parent = coinFrame
+local function updateCoins()
 
-coinLabel.Size = UDim2.new(1,0,1,0)
+    label.Text =
+        "Coins: " ..
+        tostring(coins.Value)
+end
 
-coinLabel.BackgroundTransparency = 1
+updateCoins()
 
-coinLabel.TextColor3 =
-    Color3.new(1,1,1)
-
-coinLabel.Font = Enum.Font.GothamBold
-coinLabel.TextSize = 16
+coins:GetPropertyChangedSignal("Value")
+:Connect(updateCoins)
 
 -- ===== FORMAT NUMBER =====
 local function formatNumber(n)
