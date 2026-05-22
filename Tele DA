@@ -18,10 +18,16 @@ sg.ResetOnSpawn = false
 local frame = Instance.new("Frame")
 frame.Parent = sg
 frame.Size = UDim2.new(0, 330, 0, 120)
-frame.Position = UDim2.new(1, -340, 0.2, 0)
+
+-- Góc trái
+frame.Position = UDim2.new(0, 10, 0.2, 0)
+
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.Active = true
-frame.Draggable = true
+
+-- Cố định bảng
+frame.Active = false
+frame.Draggable = false
+
 Instance.new("UICorner", frame)
 
 local layout = Instance.new("UIGridLayout")
@@ -47,7 +53,6 @@ end
 
 -- ===== TELEPORTS =====
 createBtn("🗺 Map", -143.17, 136.41, -90.28, Color3.fromRGB(0,120,215))
-
 createBtn("🤝 Trade", -1000.12, 357.23, -601.38, Color3.fromRGB(200,120,0))
 
 createBtn("🚧 Giới hạn", -1259.12, 312.86, -1948.69, Color3.fromRGB(180,50,50))
@@ -56,11 +61,15 @@ createBtn("🚧 Giới hạn", -1259.12, 312.86, -1948.69, Color3.fromRGB(180,50
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = sg
 toggleBtn.Size = UDim2.new(0, 60, 0, 30)
-toggleBtn.Position = UDim2.new(1, -70, 0, 5)
+
+-- Nút MENU góc trái
+toggleBtn.Position = UDim2.new(0, 10, 0, 5)
+
 toggleBtn.Text = "MENU"
 toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 toggleBtn.TextColor3 = Color3.new(1,1,1)
 toggleBtn.ZIndex = 999
+
 Instance.new("UICorner", toggleBtn)
 
 toggleBtn.MouseButton1Click:Connect(function()
