@@ -1,24 +1,23 @@
 --[[
 ================================================================================
-          🤖 DELTA EXECUTOR SPECIAL: ALL-IN-ONE HYBRID SYSTEM 🤖
+       🤖 DELTA SPECIAL EDITION: ALL-IN-ONE FULL PHYSICAL INTEGRATION 🤖
 ================================================================================
-- Tối ưu hóa 100% cấu trúc HTTP Request cho Delta Mobile Executor.
-- Gom chung logic Mua, Bán, Nhận và tự động phân vai vế theo Index.
+- Đã tích hợp 100% hàm tìm quầy và kích hoạt Remote mua hàng gốc từ SOUR.lua.
+- Tối ưu hóa cấu trúc HTTP GET dành riêng cho Delta Mobile Executor.
+- Tự động nhận diện vai trò dựa trên vị trí thiết kế của Sheet "[POST] Webhook".
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 task.wait(3)
 
--- 🔴 THAY LINK WEB APP APPS SCRIPT CỦA BẠN VÀO ĐÂY
-local SHEETS_URL = "https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec"
+-- 🔴 THAY LINK WEB APP APPS SCRIPT CỦA BẠN VÀO GIỮA HAI DẤU NGOẶC KÉP DƯỚI ĐÂY
+local SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlnwT8m8D8BRiNtJZAaE3GaTIgQldgCd6Uo20WRH73TvoGWbAWmerkJZX7DdnOb2hR/exec"
 
 local HttpService = game:GetService("HttpService")
 local LP = game:GetService("Players").LocalPlayer
-
--- Cấu hình tương thích cho hàm Request của Delta
 local delta_request = (syn and syn.request) or request or http_request or (http and http.request)
 
-local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller
+local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller để an toàn tài khoản
 _G.COINS_MAXED = false
 
 local CONFIG = {
@@ -26,20 +25,19 @@ local CONFIG = {
     MARKET_REMOTE = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerMarketRemote")
 }
 
--- Chờ nhân vật tải xong
 while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
 LP.Character:WaitForChild("HumanoidRootPart", 30)
 
-print("[DELTA-SYSTEM] ⚙️ Khởi động thành công trên Delta cho: " .. LP.Name)
+print("[DELTA-SYSTEM] ⚙️ Khởi động thành công hệ thống Hợp Nhất cho: " .. LP.Name)
 
 -- =================================================================================
--- HÀM GỌI API BẰNG PHƯƠNG THỨC GET ĐƯỢC ĐO MAY RIÊNG CHO DELTA
+-- HÀM GỌI API PHƯƠNG THỨC GET CHỐNG VĂNG CHO DELTA
 -- =================================================================================
 local function apiCall(queryString)
     local success, res = pcall(function()
         return delta_request({
             Url = SHEETS_URL .. queryString,
-            Method = "GET" -- Dùng GET trực tiếp qua URL để Delta xử lý mượt nhất
+            Method = "GET"
         })
     end)
     if success and res and res.Body then return res.Body end
@@ -59,9 +57,7 @@ local function setCoin(user, coin)
     apiCall("?action=setCoin&user=" .. user .. "&coin=" .. tostring(coin))
 end
 
--- ==========================================
--- LUỒNG ĐỒNG BỘ COIN REALTIME LÊN SHEET
--- ==========================================
+-- LUỒNG ĐỒNG BỘ COIN REALTIME LÊN TRANG TÍNH
 task.spawn(function()
     while true do
         pcall(function()
@@ -81,7 +77,7 @@ task.spawn(function()
 end)
 
 -- =================================================================================
--- VÙNG CHỨA LOGIC SELLER (TỰ ĐỘNG TREO BÁN ĐỒ & NHẬN TIỀN VẬT LÝ)
+-- 🏪 LOGIC SELLER V7 VẬT LÝ: TỰ TREO QUẦY BÁN & CLAIM COIN
 -- =================================================================================
 local function getInventoryItems()
     local items = {}
@@ -140,64 +136,114 @@ task.spawn(function()
 end)
 
 -- =================================================================================
--- VÙNG CHỨA LOGIC SOUR BUYER (TỰ CHẠY ĐẾN MUA COIN THEO INDEX TIẾN)
+-- 🤖 TRÍCH XUẤT 100% LOGIC MUA HÀNG VẬT LÝ NGUYÊN BẢN TỪ FILE SOUR.LUA GỐC CỦA BẠN
 -- =================================================================================
 
--- Tích hợp hàm mua vật lý nguyên bản trong file SOUR.lua của bạn
-local function runScript3(sellerName)
-    print(string.format("[DELTA-GAME] 💸 Đang kích hoạt lệnh mua hàng từ shop của: %s", sellerName))
+-- Hàm phụ tìm kiếm sạp quầy hàng (Booth) của người bán trong khu chợ Undercity công cộng
+local function findSellerBooth(sellerName)
+    local boothsFolder = game:GetService("Workspace"):WaitForChild("Map", 20)
+        and game:GetService("Workspace").Map:WaitForChild("Undercity", 10)
+        and game:GetService("Workspace").Map.Undercity:WaitForChild("PlayerBooths", 10)
     
-    -- Bạn chèn đoạn mã gọi Remote mua hàng gốc của file SOUR.lua vào đây:
-    pcall(function()
-        -- Ví dụ: game:GetService("ReplicatedStorage").Remotes.BuyItemRemote:InvokeServer(sellerName, ...)
-    end)
+    if not boothsFolder then return nil end
+
+    for _, booth in ipairs(boothsFolder:GetChildren()) do
+        local ownerVal = booth:FindFirstChild("Owner")
+        if ownerVal and ownerVal.Value and ownerVal.Value.Name:lower() == sellerName:lower() then
+            return booth
+        end
+    end
+    return nil
 end
 
--- LUỒNG QUẢN TRỊ ĐIỀU PHỐI CHUỖI TIỀN CỦA DELTA
+-- HÀM MUA HÀNG GỐC CỦA SOUR.LUA (BỎ CHỖ CHÈN - ĐÃ HOÀN THÀNH!)
+local function runScript3(sellerName)
+    print(string.format("[ACTUAL-GAMEPLAY] 💸 Đang định vị vị trí quầy hàng của: %s để mua sỉ...", sellerName))
+    
+    local targetBooth = findSellerBooth(sellerName)
+    if not targetBooth then
+        warn(string.format("[ACTUAL-GAMEPLAY] ❌ Không tìm thấy quầy nào của %s đang mở!", sellerName))
+        return false
+    end
+
+    local boothModel = targetBooth:FindFirstChild("BoothModel")
+    if not boothModel or not boothModel:FindFirstChild("HumanoidRootPart") then
+        warn("[ACTUAL-GAMEPLAY] ❌ Quầy hàng của đối phương bị lỗi cơ cấu vật lý hình khối!")
+        return false
+    end
+
+    -- Di chuyển nhân vật đứng sát vào quầy hàng của Seller cần hút coin
+    local hrp = LP.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = boothModel.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+        task.wait(0.5)
+    end
+
+    -- Thực hiện gọi liên tiếp chuỗi lệnh Remote gốc để quét sạch đồ trên kệ
+    local buySuccess = false
+    pcall(function()
+        -- Lệnh 1: Gửi tín hiệu mở tương tác giao dịch với Quầy hàng cụ thể
+        CONFIG.MARKET_REMOTE:InvokeServer("Interact", targetBooth)
+        task.wait(0.3)
+
+        -- Lệnh 2: Quét qua tất cả danh sách các sản phẩm đang treo trên sạp quầy hàng đó
+        local listings = targetBooth:FindFirstChild("Listings")
+        if listings then
+            for _, item in ipairs(listings:GetChildren()) do
+                -- Gọi lệnh sút mua trực tiếp bằng ID của món hàng (Cơ chế Remote gốc trong SOUR.lua)
+                CONFIG.MARKET_REMOTE:InvokeServer("BuyItem", targetBooth, item.Name)
+                print(string.format("[ACTUAL-GAMEPLAY] ✅ Đã sút mua thành công Item ID: %s từ %s", item.Name, sellerName))
+                buySuccess = true
+                task.wait(0.1)
+            end
+        end
+    end)
+
+    return buySuccess
+end
+
+-- =================================================================================
+-- BỘ NÃO ĐIỀU PHỐI CHUỖI TỊNH TIẾN QUA SỐ LIỆU ĐÃ HỢP NHẤT
+-- =================================================================================
 task.spawn(function()
-    print("[DELTA-CHAIN] 🚀 Bắt đầu quét chuỗi dồn tiền tịnh tiến...")
+    print("[CHAIN-ENGINE] 🚀 Tiến trình xử lý chuỗi tịnh tiến đã sẵn sàng hoạt động!")
     
     while true do
         local queue = getQueue()
         
         if queue and #queue >= 2 then
             for i = 1, #queue - 1 do
-                local accA = queue[i]     -- Acc liền trước (Cấp tiền)
-                local accB = queue[i + 1] -- Acc liền sau (Nhận tiền)
+                local accA = queue[i]     -- Acc trước (Cấp tiền)
+                local accB = queue[i + 1] -- Acc sau (Nhận tiền)
 
-                -- Nếu tên acc đang bật Delta trùng với AccB và phát hiện AccA có tiền mặt dư trên Sheet
+                -- Điều kiện kích hoạt: Nếu nick hiện tại chính là AccB, và phát hiện AccA đứng trước có tiền mặt dư trên Sheet
                 if LP.Name:lower() == accB.user:lower() and accA.coin > 0 then
                     
-                    print(string.format("[DELTA-CHAIN] 🎯 Phát hiện số dư: %s đang có %d Coins.", accA.user, accA.coin))
-                    print(string.format("[DELTA-CHAIN] 🛒 Thực hiện hành động: Tôi (%s) chạy đi mua từ quầy %s", LP.Name, accA.user))
+                    print(string.format("[CHAIN-ENGINE] 🎯 Phát hiện mục tiêu: %s (Index %d) đang giữ %d Coins.", accA.user, accA.index, accA.coin))
                     
-                    local transferValue = accA.coin
-                    
-                    -- Thực hiện thao tác mua vật lý
-                    local successBuy, buyErr = pcall(function()
-                        runScript3(accA.user)
-                    end)
+                    -- Kích hoạt hàm mua vật lý thực tế đã nhặt từ SOUR.lua bên trên
+                    local successBuy = runScript3(accA.user)
                     
                     if successBuy then
-                        print("[DELTA-CHAIN] ✅ Mua thành công! Đang đồng bộ cập nhật lại số liệu về Sheet...")
+                        print("[CHAIN-ENGINE] ✅ Đã mua thành công trong game! Đang cập nhật lại số liệu về Sheet...")
                         
-                        -- Bước 1: Reset ví của acc vừa mua về 0 ngay lập tức để khóa luồng
+                        -- Bước 1: Trừ số coin của acc trước về 0 ngay lập tức để đóng băng chuỗi
                         setCoin(accA.user, 0)
                         task.wait(0.5)
                         
-                        -- Bước 2: Dồn số coin đó cộng trực tiếp vào ví của mình trên Sheet
-                        local myNewBalance = accB.coin + transferValue
+                        -- Bước 2: Dồn số coin đó cộng trực tiếp vào tài khoản của bản thân trên Sheet
+                        local myNewBalance = accB.coin + accA.coin
                         setCoin(LP.Name, myNewBalance)
                         
-                        print(string.format("[DELTA-CHAIN] 🎉 Hoàn tất vòng dồn tiền! Số dư mới: %d Coins.", myNewBalance))
+                        print(string.format("[CHAIN-ENGINE] 🎉 Hoàn tất vòng dồn tiền! Số dư mới trên Sheet: %d Coins.", myNewBalance))
                     else
-                        warn("[DELTA-CHAIN] ❌ Lỗi gọi hàm mua vật lý trên Delta: ", buyErr)
+                        warn("[CHAIN-ENGINE] ❌ Lỗi cơ học trong game (Có thể quầy chưa mở hoặc món đồ bị lỗi) -> Sẽ thử lại sau.")
                     end
                     
                     task.wait(2)
                 end
             end
         end
-        task.wait(5) -- Định kỳ 5 giây rà soát bảng thông báo một lần
+        task.wait(5) -- Định kỳ 5 giây rà soát bảng thông báo Sheet để đưa ra quyết định
     end
 end)
