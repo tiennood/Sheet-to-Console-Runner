@@ -95,22 +95,28 @@ local function startMarketChain(jsonString)
         end
     end)
 
-    -- Luồng 2: Treo bán và tự động claim tiền (Mỗi 2 giây)
+  -- Luồng 2: Tự động nhận tiền và CHỈ GỬI ĐÚNG 1 LỆNH BÁN (Không spam liên tục)
     task.spawn(function()
         while true do
             pcall(function()
                 local playerMarket = player:WaitForChild("Data"):WaitForChild("PlayerMarket")
+                local hasClaimed = false
+                
+                -- 1. Kiểm tra và tự động nhận tiền (Claim)
                 for i = 1, 5 do
                     local slot = playerMarket:FindFirstChild(tostring(i))
                     if slot and slot:FindFirstChild("Purchased") and slot.Purchased.Value == true then
                         claimCoins(i)
+                        hasClaimed = true -- Đánh dấu là có ô vừa trống do vừa nhận tiền
                     end
                 end
-                if CONFIG.ITEM_PRICE > 0 then
-                    task.spawn(function() for _ = 1, 5 do sellItem() task.wait(0.1) end end)
+                
+                -- 2. CHỈ CHO BÁN 1: Nếu có ô vừa trống và có cấu hình giá tiền
+                if hasClaimed and CONFIG.ITEM_PRICE > 0 then
+                    sellItem() -- Gọi đúng 1 lần duy nhất để lấp vào ô trống, không lặp 5 lần nữa!
                 end
             end)
-            task.wait(2)
+            task.wait(2) -- Chờ 2 giây cho lần quét tiếp theo
         end
     end)
     return true
