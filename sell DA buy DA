@@ -1,0 +1,214 @@
+--[[
+================================================================================
+          🤖 SCRIPT ALL-IN-ONE: HYBRID CHAIN SYSTEM (MUA + BÁN + ĐỒNG BỘ) 🤖
+================================================================================
+- Dùng chung 1 script duy nhất cho mọi tài khoản trong hệ thống.
+- Tự động hóa hoàn toàn hành động trong game dựa trên thứ tự Index của Google Sheet.
+]]
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+wait(5)
+
+-- ==========================================
+-- ĐỊNH CẤU HÌNH & DỊCH VỤ HỆ THỐNG
+-- ==========================================
+local SHEETS_URL = "https://script.google.com/macros/s/AKfycbxITEMXKMQwK5j15A7XIPUd4NDWUVfZSuQ64FOPIedZdr4COAaXLGmQ7WSj676ypMtL/exec"
+local HttpService = game:GetService("HttpService")
+local req = (syn and syn.request) or request or http_request
+local LP = game:GetService("Players").LocalPlayer
+
+local MAX_COINS = 100000000 -- 100M giới hạn an toàn của Seller
+_G.COINS_MAXED = false      
+
+local CONFIG = {
+    UNDERCITY_ID = 4601778915,
+    MARKET_REMOTE = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerMarketRemote")
+}
+
+-- Đảm bảo Character nhân vật đã tải xong hoàn toàn
+while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
+LP.Character:WaitForChild("HumanoidRootPart", 30)
+task.wait(1)
+
+print("[SYSTEM] ⚙️ Khởi chạy tài khoản: " .. LP.Name)
+
+-- ==========================================
+-- CÁC HÀM API KẾT NỐI GOOGLE SHEET
+-- ==========================================
+local function apiCall(params)
+    local success, res = pcall(function()
+        return req({ Url = SHEETS_URL .. params, Method = "GET" })
+    end)
+    if success and res and res.Body then return res.Body end
+    return nil
+end
+
+local function getQueue()
+    local body = apiCall("?action=getQueue")
+    if body then return HttpService:JSONDecode(body) end
+    return nil
+end
+
+local function setCoin(user, coin)
+    apiCall("?action=setCoin&user=" .. user .. "&coin=" .. tostring(coin))
+end
+
+-- ==========================================
+-- LUỒNG ĐỒNG BỘ COIN REALTIME (CỦA CHÍNH MÌNH)
+-- ==========================================
+task.spawn(function()
+    while true do
+        pcall(function()
+            local dataFolder = LP:ClearCharacterAppearanceBeforeInstance() or LP:WaitForChild("Data", 10)
+            local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
+            if coinsObj then
+                setCoin(LP.Name, coinsObj.Value)
+            end
+        end)
+        task.wait(5)
+    end
+end)
+
+-- Sau khi chạy, kiểm tra xem acc có chạm mốc tối đa hay không để dừng bán tạm thời
+task.spawn(function()
+    while true do
+        pcall(function()
+            local dataFolder = LP:WaitForChild("Data", 10)
+            local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
+            if coinsObj and coinsObj.Value >= MAX_COINS then
+                _G.COINS_MAXED = true
+            else
+                _G.COINS_MAXED = false
+            end
+        end)
+        task.wait(5)
+    end
+end)
+
+
+-- =================================================================================
+-- 🏪 VÙNG CHỨA TÍNH NĂNG SELLER V7 (HÀM BÁN ĐỒ & NHẬN TIỀN VẬT LÝ)
+-- =================================================================================
+local function getInventoryItems()
+    local items = {}
+    pcall(function()
+        local inv = LP:WaitForChild("Data", 10):WaitForChild("Inventory", 10)
+        for _, item in ipairs(inv:GetChildren()) do
+            if item:IsA("NumberValue") and item.Value > 0 then
+                table.insert(items, { Name = item.Name, Amount = item.Value })
+            end
+        end
+    end)
+    return items
+end
+
+local function sellItem()
+    pcall(function()
+        local inventory = getInventoryItems()
+        if #inventory == 0 then return end
+        
+        table.sort(inventory, function(a, b) return a.Amount > b.Amount end)
+        local target = inventory[1]
+        
+        local currentPrice = 99999
+        if target.Name:lower():find("apple") then currentPrice = 110 end
+
+        local args = {
+            [1] = "Publish",
+            [2] = { ["Price"] = currentPrice, ["ItemName"] = target.Name, ["Amount"] = 1 }
+        }
+        CONFIG.MARKET_REMOTE:InvokeServer(unpack(args))
+    end)
+end
+
+local function claimMarket()
+    pcall(function()
+        CONFIG.MARKET_REMOTE:InvokeServer(unpack({ [1] = "ClaimAll" }))
+    end)
+end
+
+-- Khởi động luồng lặp tự động treo Kệ Bán và thu gom tiền của SELLER (chỉ chạy khi ở chợ Chợ Undercity)
+task.spawn(function()
+    while true do
+        if game.PlaceId == CONFIG.UNDERCITY_ID then
+            pcall(function()
+                claimMarket() -- Thao tác nhận tiền mặt trong game
+                task.wait(0.3)
+                
+                if not _G.COINS_MAXED then
+                    for _ = 1, 5 do
+                        sellItem() -- Thao tác đăng bán đồ lên quầy chợ
+                        task.wait(0.1)
+                    end
+                end
+            end)
+        end
+        task.wait(2)
+    end
+end)
+
+
+-- =================================================================================
+-- 🤖 VÙNG CHỨA TÍNH NĂNG SOUR.LUA (BỘ NÃO QUYẾT ĐỊNH VÀ THỰC THI MUA THEO INDEX CHUỖI)
+-- =================================================================================
+
+-- Giả định hàm tìm quầy và nhấn sút mua đồ từ file SOUR.lua gốc của bạn
+local function runScript3(sellerName)
+    -- Hệ thống sẽ tự gọi hàm vật lý mua đồ/hút coin có sẵn của bạn ở đây
+    -- (Đoạn này chạy các Remote mua hàng từ quầy của player có tên `sellerName`)
+    print(string.format("[ACTUAL-GAMEPLAY] Đang thực thi hành động mua sỉ đồ từ shop của: %s", sellerName))
+    
+    -- Bạn chèn logic mua gốc bằng Remote của bạn vào đây:
+    -- Ví dụ: runScript3_Original_Logic(sellerName)
+end
+
+-- LUỒNG QUẢN TRỊ CHUỖI TIỀN TỆ: TỰ ĐỘNG QUÉT VÀ ĐẨY QUYẾT ĐỊNH MUA CHO TỪNG CẤP INDEX
+task.spawn(function()
+    print("[CHAIN-BRAIN] 🚀 Luồng quét chuỗi tịnh tiến Index đã sẵn sàng hoạt động!")
+    
+    while true do
+        local queue = getQueue()
+        
+        if queue and #queue >= 2 then
+            for i = 1, #queue - 1 do
+                local accA = queue[i]     -- Acc nguồn cấp tiền (Đứng trước)
+                local accB = queue[i + 1] -- Acc nhận tiền (Đứng sau)
+
+                -- KIỂM TRA ĐIỀU KIỆN MUA TRONG SERVER:
+                -- Nếu TÊN TÀI KHOẢN HIỆN TẠI chính là AccB (Acc sau) và phát hiện AccA (Acc liền trước) đang có tiền mặt dư trên Sheet
+                if LP.Name:lower() == accB.user:lower() and accA.coin > 0 then
+                    
+                    print(string.format("[CHAIN-BRAIN] 🔥 Phát hiện số dư! Index %d (%s) đang giữ %d Coins.", accA.index, accA.user, accA.coin))
+                    print(string.format("[CHAIN-BRAIN] 🛒 Hành động: Tôi (%s) tiến hành mua đồ từ %s!", LP.Name, accA.user))
+                    
+                    local transferValue = accA.coin
+                    
+                    -- Kích hoạt hành động mua vật lý thực tế trong game
+                    local successBuy, buyErr = pcall(function()
+                        runScript3(accA.user)
+                    end)
+                    
+                    if successBuy then
+                        print(string.format("[CHAIN-BRAIN] ✅ Mua thành công! Tiến hành cập nhật trạng thái số liệu..."))
+                        
+                        -- Bước 1: Khóa/Trừ số coin của tài khoản trước về 0 trên Sheet ngay lập tức
+                        setCoin(accA.user, 0)
+                        task.wait(0.5)
+                        
+                        -- Bước 2: Gom toàn bộ tiền mặt dồn sang tài khoản của mình trên Sheet
+                        local myNewBalance = accB.coin + transferValue
+                        setCoin(LP.Name, myNewBalance)
+                        
+                        print(string.format("[CHAIN-BRAIN] 🎉 Dịch chuyển quỹ hoàn tất! Số dư mới trên hệ thống: %d Coins.", myNewBalance))
+                    else
+                        warn("[CHAIN-BRAIN] ❌ Thao tác mua bị lỗi cơ học trong game: ", buyErr)
+                    end
+                    
+                    task.wait(2) -- Nghỉ giãn cách tránh nghẽn luồng
+                end
+            end
+        end
+        
+        task.wait(5) -- 5 giây rà soát lại toàn bộ chuỗi hàng dọc một lần
+    end
+end)
