@@ -1,47 +1,45 @@
 --[[
 ================================================================================
-       🤖 SCRIPT ALL-IN-ONE: POST SYSTEM FOR SHEET "[POST] Webhook" 🤖
+          🤖 DELTA EXECUTOR SPECIAL: ALL-IN-ONE HYBRID SYSTEM 🤖
 ================================================================================
-- Sử dụng phương thức POST thuần JSON gửi ẩn qua Body.
-- Tự động nhận diện Acc để Bán/Claim hoặc đi Mua theo chuỗi tịnh tiến Index.
+- Tối ưu hóa 100% cấu trúc HTTP Request cho Delta Mobile Executor.
+- Gom chung logic Mua, Bán, Nhận và tự động phân vai vế theo Index.
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-wait(5)
+task.wait(3)
 
--- Thay URL Web App Apps Script mới của bạn vào đây (Link sau khi Deploy lại dạng POST)
+-- 🔴 THAY LINK WEB APP APPS SCRIPT CỦA BẠN VÀO ĐÂY
 local SHEETS_URL = "https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec"
+
 local HttpService = game:GetService("HttpService")
-local req = (syn and syn.request) or request or http_request
 local LP = game:GetService("Players").LocalPlayer
 
-local MAX_COINS = 100000000 -- Cột mốc tối đa 100M
-_G.COINS_MAXED = false      
+-- Cấu hình tương thích cho hàm Request của Delta
+local delta_request = (syn and syn.request) or request or http_request or (http and http.request)
+
+local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller
+_G.COINS_MAXED = false
 
 local CONFIG = {
     UNDERCITY_ID = 4601778915,
     MARKET_REMOTE = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerMarketRemote")
 }
 
--- Chờ nhân vật tải xong hoàn toàn
+-- Chờ nhân vật tải xong
 while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
 LP.Character:WaitForChild("HumanoidRootPart", 30)
-task.wait(1)
 
-print("[SYSTEM-POST] ⚙️ Khởi chạy tài khoản: " .. LP.Name)
+print("[DELTA-SYSTEM] ⚙️ Khởi động thành công trên Delta cho: " .. LP.Name)
 
 -- =================================================================================
--- HÀM GỬI REQUEST POST PHƯƠNG THỨC MỚI (JSON BODY)
+-- HÀM GỌI API BẰNG PHƯƠNG THỨC GET ĐƯỢC ĐO MAY RIÊNG CHO DELTA
 -- =================================================================================
-local function apiCall(data_table)
+local function apiCall(queryString)
     local success, res = pcall(function()
-        return req({
-            Url = SHEETS_URL,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json" -- Khai báo dữ liệu JSON
-            },
-            Body = HttpService:JSONEncode(data_table) -- Đóng gói data gửi ẩn vào Body
+        return delta_request({
+            Url = SHEETS_URL .. queryString,
+            Method = "GET" -- Dùng GET trực tiếp qua URL để Delta xử lý mượt nhất
         })
     end)
     if success and res and res.Body then return res.Body end
@@ -49,17 +47,20 @@ local function apiCall(data_table)
 end
 
 local function getQueue()
-    local body = apiCall({ action = "getQueue" })
-    if body then return HttpService:JSONDecode(body) end
+    local body = apiCall("?action=getQueue")
+    if body then 
+        local success, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if success then return decoded end
+    end
     return nil
 end
 
 local function setCoin(user, coin)
-    apiCall({ action = "setCoin", user = user, coin = coin })
+    apiCall("?action=setCoin&user=" .. user .. "&coin=" .. tostring(coin))
 end
 
 -- ==========================================
--- LUỒNG TỰ ĐỘNG BÁO CÁO COIN REALTIME (CỦA CHÍNH MÌNH)
+-- LUỒNG ĐỒNG BỘ COIN REALTIME LÊN SHEET
 -- ==========================================
 task.spawn(function()
     while true do
@@ -68,30 +69,19 @@ task.spawn(function()
             local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
             if coinsObj then
                 setCoin(LP.Name, coinsObj.Value)
-            end
-        end)
-        task.wait(5) -- 5 giây đồng bộ lên Sheet một lần bằng lệnh POST
-    end
-end)
-
-task.spawn(function()
-    while true do
-        pcall(function()
-            local dataFolder = LP:WaitForChild("Data", 10)
-            local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
-            if coinsObj and coinsObj.Value >= MAX_COINS then
-                _G.COINS_MAXED = true
-            else
-                _G.COINS_MAXED = false
+                if coinsObj.Value >= MAX_COINS then
+                    _G.COINS_MAXED = true
+                else
+                    _G.COINS_MAXED = false
+                end
             end
         end)
         task.wait(5)
     end
 end)
 
-
 -- =================================================================================
--- 🏪 VÙNG CHỨA LOGIC CỦA SELLER V7 (HÀM ĐĂNG BÁN & NHẬN COIN VẬT LÝ)
+-- VÙNG CHỨA LOGIC SELLER (TỰ ĐỘNG TREO BÁN ĐỒ & NHẬN TIỀN VẬT LÝ)
 -- =================================================================================
 local function getInventoryItems()
     local items = {}
@@ -131,14 +121,12 @@ local function claimMarket()
     end)
 end
 
--- Vòng lặp vật lý tự động Treo kệ - Thu tiền Chợ
 task.spawn(function()
     while true do
         if game.PlaceId == CONFIG.UNDERCITY_ID then
             pcall(function()
                 claimMarket()
                 task.wait(0.3)
-                
                 if not _G.COINS_MAXED then
                     for _ = 1, 5 do
                         sellItem()
@@ -151,65 +139,65 @@ task.spawn(function()
     end
 end)
 
-
 -- =================================================================================
--- 🤖 VÙNG CHỨA LOGIC CỦA SOUR.LUA (HÀM BUYER CHẠY ĐẾN MUA THEO CHUỖI TIẾN)
+-- VÙNG CHỨA LOGIC SOUR BUYER (TỰ CHẠY ĐẾN MUA COIN THEO INDEX TIẾN)
 -- =================================================================================
 
--- Hàm mua vật lý nguyên bản của bạn từ file SOUR.lua
+-- Tích hợp hàm mua vật lý nguyên bản trong file SOUR.lua của bạn
 local function runScript3(sellerName)
-    print(string.format("[GAMEPLAY] 💸 Đang thực hiện hành động mua sắm từ quầy của: %s", sellerName))
+    print(string.format("[DELTA-GAME] 💸 Đang kích hoạt lệnh mua hàng từ shop của: %s", sellerName))
     
-    -- Bạn dán hoặc tích hợp các dòng Remote mua hàng từ file SOUR.lua gốc của bạn vào đây:
-    -- Ví dụ: game.ReplicatedStorage.Remotes.BuyItemRemote:InvokeServer(sellerName, ...)
+    -- Bạn chèn đoạn mã gọi Remote mua hàng gốc của file SOUR.lua vào đây:
+    pcall(function()
+        -- Ví dụ: game:GetService("ReplicatedStorage").Remotes.BuyItemRemote:InvokeServer(sellerName, ...)
+    end)
 end
 
--- BỘ NÃO ĐIỀU PHỐI: QUÉT DANH SÁCH POST ĐỂ RA QUYẾT ĐỊNH MUA
+-- LUỒNG QUẢN TRỊ ĐIỀU PHỐI CHUỖI TIỀN CỦA DELTA
 task.spawn(function()
-    print("[POST-CHAIN] 🚀 Tiến trình quét chuỗi tịnh tiến Index bằng POST đã hoạt động!")
+    print("[DELTA-CHAIN] 🚀 Bắt đầu quét chuỗi dồn tiền tịnh tiến...")
     
     while true do
         local queue = getQueue()
         
         if queue and #queue >= 2 then
             for i = 1, #queue - 1 do
-                local accA = queue[i]     -- Acc trước (Cấp tiền)
-                local accB = queue[i + 1] -- Acc sau (Nhận tiền)
+                local accA = queue[i]     -- Acc liền trước (Cấp tiền)
+                local accB = queue[i + 1] -- Acc liền sau (Nhận tiền)
 
-                -- Nếu tên mình là AccB đứng sau, và quét thấy trên Sheet báo AccA có tiền mặt dư:
+                -- Nếu tên acc đang bật Delta trùng với AccB và phát hiện AccA có tiền mặt dư trên Sheet
                 if LP.Name:lower() == accB.user:lower() and accA.coin > 0 then
                     
-                    print(string.format("[POST-CHAIN] 🎯 Phát hiện mục tiêu: %s (Index %d) có %d Coins.", accA.user, accA.index, accA.coin))
-                    print(string.format("[POST-CHAIN] 🛒 Thực hiện hành động: Tôi (%s) tiến hành mua đồ từ quầy %s", LP.Name, accA.user))
+                    print(string.format("[DELTA-CHAIN] 🎯 Phát hiện số dư: %s đang có %d Coins.", accA.user, accA.coin))
+                    print(string.format("[DELTA-CHAIN] 🛒 Thực hiện hành động: Tôi (%s) chạy đi mua từ quầy %s", LP.Name, accA.user))
                     
                     local transferValue = accA.coin
                     
-                    -- Kích hoạt hành động mua cơ học trong game
+                    -- Thực hiện thao tác mua vật lý
                     local successBuy, buyErr = pcall(function()
                         runScript3(accA.user)
                     end)
                     
                     if successBuy then
-                        print("[POST-CHAIN] ✅ Đã sút mua xong! Tiến hành cập nhật số liệu lên trang [POST] Webhook...")
+                        print("[DELTA-CHAIN] ✅ Mua thành công! Đang đồng bộ cập nhật lại số liệu về Sheet...")
                         
-                        -- Bước 1: Trừ số coin của acc trước về 0 lập tức để đóng băng chuỗi
+                        -- Bước 1: Reset ví của acc vừa mua về 0 ngay lập tức để khóa luồng
                         setCoin(accA.user, 0)
                         task.wait(0.5)
                         
-                        -- Bước 2: Cộng dồn tiền mặt vào tài khoản của bản thân
+                        -- Bước 2: Dồn số coin đó cộng trực tiếp vào ví của mình trên Sheet
                         local myNewBalance = accB.coin + transferValue
                         setCoin(LP.Name, myNewBalance)
                         
-                        print(string.format("[POST-CHAIN] 🎉 Chuyển dịch hoàn tất! Ví của tôi trên Sheet: %d Coins.", myNewBalance))
+                        print(string.format("[DELTA-CHAIN] 🎉 Hoàn tất vòng dồn tiền! Số dư mới: %d Coins.", myNewBalance))
                     else
-                        warn("[POST-CHAIN] ❌ Thao tác mua bị lỗi game: ", buyErr)
+                        warn("[DELTA-CHAIN] ❌ Lỗi gọi hàm mua vật lý trên Delta: ", buyErr)
                     end
                     
                     task.wait(2)
                 end
             end
         end
-        
-        task.wait(5) -- Định kỳ 5 giây gửi POST quét toàn bộ chuỗi một lần
+        task.wait(5) -- Định kỳ 5 giây rà soát bảng thông báo một lần
     end
 end)
