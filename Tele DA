@@ -97,12 +97,11 @@ local function startMarketChain(jsonString)
         end
     end)
 
-    -- Luồng 2: Tự động nhận tiền và gửi 5 lệnh bán (Mỗi lệnh cách nhau 1 giây)
+    -- Luồng 2: ĐÃ QUAY LẠI LOGIC CŨ (Bán liên tục mỗi 2 giây, giãn cách giữa các lệnh là 1 giây)
     task.spawn(function()
         while CONFIG.isChainRunning do
             pcall(function()
                 local playerMarket = player:WaitForChild("Data"):WaitForChild("PlayerMarket")
-                local hasClaimed = false
                 
                 -- 1. Kiểm tra và tự động nhận tiền (Claim)
                 for i = 1, 5 do
@@ -110,22 +109,21 @@ local function startMarketChain(jsonString)
                     local slot = playerMarket:FindFirstChild(tostring(i))
                     if slot and slot:FindFirstChild("Purchased") and slot.Purchased.Value == true then
                         claimCoins(i)
-                        hasClaimed = true 
                     end
                 end
                 
-                -- 2. ĐÃ SỬA: Gửi 5 lần liên tục, giãn cách mỗi lần 1 giây
-                if hasClaimed and CONFIG.ITEM_PRICE > 0 then
+                -- 2. Cấu trúc cũ: Cứ mỗi chu kỳ quét là tự động spam gửi 5 lệnh bán
+                if CONFIG.ITEM_PRICE > 0 then
                     task.spawn(function()
                         for _ = 1, 5 do
                             if not CONFIG.isChainRunning then break end
-                            sellItem() 
-                            task.wait(1) -- ĐÃ TĂNG: Chờ đúng 1 giây trước khi gửi lệnh tiếp theo
+                            sellItem()
+                            task.wait(1) -- Giữ khoảng cách 1 giây để không bị kick/quá tải lệnh
                         end
                     end)
                 end
             end)
-            task.wait(2) 
+            task.wait(2) -- Chu kỳ quét lại gian hàng sau mỗi 2 giây
         end
     end)
     return true
@@ -152,7 +150,7 @@ local function formatNumber(n)
 end
 
 -- =================================================================================
--- INTERFACE (BẢNG MENU CHỨA NÚT CHỨC NĂNG)
+-- INTERFACE (BẢNG MENU ĐẦY ĐỦ NÚT)
 -- =================================================================================
 local sg = Instance.new("ScreenGui")
 sg.Parent = player:WaitForChild("PlayerGui")
@@ -215,7 +213,7 @@ chainBtn = createCustomBtn("🛒 Chạy Chuỗi", Color3.fromRGB(46, 139, 87), f
     end
 end)
 
--- ===== HÀNG NÚT 3: DỪNG VÀ XÓA =====
+-- ===== HÀNG NÚT 3: NÚT DỪNG VÀ XÓA CỦA BẠN =====
 local stopBtn
 stopBtn = createCustomBtn("🛑 Dừng Chuỗi", Color3.fromRGB(162, 36, 36), function()
     CONFIG.isChainRunning = false
