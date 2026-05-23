@@ -12,7 +12,7 @@ wait(5)
 -- ==========================================
 -- ĐỊNH CẤU HÌNH & DỊCH VỤ HỆ THỐNG
 -- ==========================================
-local SHEETS_URL = "https://script.google.com/macros/s/AKfycbxITEMXKMQwK5j15A7XIPUd4NDWUVfZSuQ64FOPIedZdr4COAaXLGmQ7WSj676ypMtL/exec"
+local SHEETS_URL = "https://script.google.com/macros/s/AKfycbx6xbNq3mW_s-CkxJBU2sdFoM4nnVcftwd0SxZlrQe4lQvgaCrVkdl9jXGj9sw38Hx-/exec"
 local HttpService = game:GetService("HttpService")
 local req = (syn and syn.request) or request or http_request
 local LP = game:GetService("Players").LocalPlayer
