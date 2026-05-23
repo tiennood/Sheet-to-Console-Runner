@@ -117,7 +117,7 @@ local function startMarketChain(jsonString)
 end
 
 -- =================================================================================
--- LOGIC FUNCTIONS (TELEPORT)
+-- LOGIC FUNCTIONS (TELEPORT & UTILS)
 -- =================================================================================
 local function tele(x, y, z)
     local char = player.Character
@@ -126,14 +126,25 @@ local function tele(x, y, z)
     end
 end
 
+local function formatNumber(n)
+    local s = tostring(n)
+    while true do
+        local k
+        s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
+        if k == 0 then break end
+    end
+    return s
+end
+
 -- =================================================================================
--- INTERFACE (GUI MENU TRÊN TRÁI)
+-- INTERFACE (BẢNG MENU CẬP NHẬT THÊM Ô NHẬP TEXTBOX)
 -- =================================================================================
 local sg = Instance.new("ScreenGui")
 sg.Parent = player:WaitForChild("PlayerGui")
 sg.Name = "MiniTeleportMenu"
 sg.ResetOnSpawn = false
 
+-- Điều chỉnh Frame tổng cao lên (Size Y = 185) để chứa vừa cả nút lẫn Ô nhập JSON
 local frame = Instance.new("Frame")
 frame.Parent = sg
 frame.Size = UDim2.new(0, 330, 0, 185)
@@ -141,6 +152,7 @@ frame.Position = UDim2.new(0, 10, 0, 40)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Instance.new("UICorner", frame)
 
+-- Khung chứa phụ độc lập dành riêng cho các Nút (tránh lỗi lấn layout của TextBox)
 local btnContainer = Instance.new("Frame")
 btnContainer.Parent = frame
 btnContainer.Size = UDim2.new(0, 310, 0, 90)
@@ -165,7 +177,7 @@ local function createCustomBtn(text, color, callback)
     return btn
 end
 
--- ===== NÚT DỊCH CHUYỂN =====
+-- ===== CÁC NÚT CHỨC NĂNG CŨ =====
 createCustomBtn("🗺 Map", Color3.fromRGB(0,120,215), function() tele(-143.17, 136.41, -90.28) end)
 createCustomBtn("🤝 Trade", Color3.fromRGB(200,120,0), function() tele(-1000.12, 357.23, -601.38) end)
 createCustomBtn("🚧 Giới hạn", Color3.fromRGB(180,50,50), function() tele(-1259.12, 312.86, -1948.69) end)
@@ -179,11 +191,11 @@ createCustomBtn("🌐 Webhook DA", Color3.fromRGB(102, 51, 153), function()
     if not success then warn("Lỗi chạy Webhook: ", err) end
 end)
 
--- ===== Ô NHẬP TEXTBOX JSON =====
+-- ===== DÒNG Ô NHẬP TEXTBOX ĐỂ GHI/DÁN CHUỖI JSON =====
 local jsonTextBox = Instance.new("TextBox")
 jsonTextBox.Parent = frame
 jsonTextBox.Size = UDim2.new(0, 310, 0, 65)
-jsonTextBox.Position = UDim2.new(0, 10, 0, 110)
+jsonTextBox.Position = UDim2.new(0, 10, 0, 110) -- Nằm gọn gàng phía bên dưới các nút
 jsonTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 jsonTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 jsonTextBox.TextSize = 11
@@ -191,24 +203,24 @@ jsonTextBox.Font = Enum.Font.SourceSans
 jsonTextBox.Text = ""
 jsonTextBox.PlaceholderText = "Dán chuỗi JSON vào đây trước khi chạy..."
 jsonTextBox.TextWrapped = true
-jsonTextBox.MultiLine = true
-jsonTextBox.ClearTextOnFocus = false
+jsonTextBox.MultiLine = true                   -- Bắt buộc bật để hỗ trợ dán chuỗi JSON nhiều dòng
+jsonTextBox.ClearTextOnFocus = false           -- Không tự động xóa chữ cũ khi nhấn vào chỉnh sửa
 jsonTextBox.TextXAlignment = Enum.TextXAlignment.Left
 jsonTextBox.TextYAlignment = Enum.TextYAlignment.Top
 Instance.new("UICorner", jsonTextBox)
 
--- ===== NÚT CHẠY CHUỖI GIAO DỊCH =====
+-- ===== NÚT CHẠY CHUỖI GIAO DỊCH (Sẽ kiểm tra chuỗi chữ trong Ô nhập) =====
 local chainBtn
 chainBtn = createCustomBtn("🛒 Chạy Chuỗi", Color3.fromRGB(46, 139, 87), function()
     local success = startMarketChain(jsonTextBox.Text)
     if success then
         chainBtn.Text = "✅ Đang Chạy"
         chainBtn.BackgroundColor3 = Color3.fromRGB(34, 112, 69)
-        jsonTextBox.Active = false
+        jsonTextBox.Active = false -- Khóa nhập liệu sau khi đã nhận diện thành công chuỗi
     end
 end)
 
--- ===== NÚT TOGGLE MENU =====
+-- ===== NÚT TOGGLE MENU KHÓA/MỞ GIAO DIỆN =====
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = sg
 toggleBtn.Size = UDim2.new(0, 60, 0, 30)
@@ -225,43 +237,31 @@ toggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- =================================================================================
--- COIN DISPLAY (GÓC DƯỚI TRÁI - GIỮ NGUYÊN HOÀN TOÀN GIÁ TRỊ GỐC CỦA BẠN)
+-- HIỂN THỊ COIN CHUẨN (GÓC DƯỚI TRÁI)
 -- =================================================================================
-local label = Instance.new("TextLabel")
-label.Parent = sg
+local coinLabel = Instance.new("TextLabel")
+coinLabel.Parent = sg
+coinLabel.Size = UDim2.new(0, 250, 0, 40)
+coinLabel.Position = UDim2.new(0, 10, 1, -50)
+coinLabel.BackgroundTransparency = 0.4
+coinLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+coinLabel.TextSize = 16
+coinLabel.TextColor3 = Color3.new(1,1,1)
+coinLabel.Font = Enum.Font.GothamBold
+Instance.new("UICorner", coinLabel)
 
-label.Size = UDim2.new(0, 250, 0, 50)
-
--- Góc dưới bên trái
-label.Position = UDim2.new(0, 10, 1, -60)
-
-label.BackgroundTransparency = 0.3
-label.TextScaled = true
-label.TextColor3 = Color3.new(1,1,1)
-label.Font = Enum.Font.GothamBold
-Instance.new("UICorner", label)
-
--- ===== FORMAT NUMBER =====
-local function formatNumber(n)
-    local s = tostring(n)
-    while true do
-        local k
-        s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
-        if k == 0 then
-            break
-        end
-    end
-    return s
-end
-
--- ===== GET COINS =====
 task.spawn(function()
-    local coins = player:WaitForChild("Data"):WaitForChild("Currency"):WaitForChild("Coins")
+    local dataFolder = player:WaitForChild("Data", 30)
+    local currency = dataFolder and dataFolder:WaitForChild("Currency", 30)
+    local coins = currency and currency:WaitForChild("Coins", 30)
 
-    local function updateCoins()
-        label.Text = "🪙 Coins: " .. formatNumber(coins.Value)
+    if coins then
+        local function updateCoins()
+            coinLabel.Text = " 🪙 Coins: " .. formatNumber(coins.Value)
+        end
+        updateCoins()
+        coins:GetPropertyChangedSignal("Value"):Connect(updateCoins)
+    else
+        coinLabel.Text = " 🪙 Coins: N/A"
     end
-
-    updateCoins()
-    coins:GetPropertyChangedSignal("Value"):Connect(updateCoins)
 end)
