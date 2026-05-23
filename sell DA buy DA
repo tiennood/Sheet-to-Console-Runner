@@ -1,23 +1,22 @@
 --[[
 ================================================================================
-       🤖 DELTA SPECIAL EDITION: ALL-IN-ONE FULL PHYSICAL INTEGRATION 🤖
+       🤖 DELTA SPECIAL: FULL AUTO-REGISTER HYBRID SYSTEM (GET-METHOD) 🤖
 ================================================================================
-- Đã tích hợp 100% hàm tìm quầy và kích hoạt Remote mua hàng gốc từ SOUR.lua.
-- Tối ưu hóa cấu trúc HTTP GET dành riêng cho Delta Mobile Executor.
-- Tự động nhận diện vai trò dựa trên vị trí thiết kế của Sheet "[POST] Webhook".
+- Tự động gửi Username và Coin lên Sheet để đăng ký Index (Không cần nhập tay).
+- Đã tích hợp 100% logic di chuyển, mở quầy và mua đồ thực tế từ SOUR.lua.
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 task.wait(3)
 
--- 🔴 THAY LINK WEB APP APPS SCRIPT CỦA BẠN VÀO GIỮA HAI DẤU NGOẶC KÉP DƯỚI ĐÂY
-local SHEETS_URL = "https://script.google.com/macros/s/AKfycbzlnwT8m8D8BRiNtJZAaE3GaTIgQldgCd6Uo20WRH73TvoGWbAWmerkJZX7DdnOb2hR/exec"
+-- 🔴 DÁN ĐOẠN LINK WEB APP URL MỚI CỦA BẠN VÀO ĐÂY
+local SHEETS_URL = "https://script.google.com/macros/s/AKfycbyribuFmeOwq-G2oQWElqw7PbE1JYj_72vidGmXgX5fsDqeN95-J-K9c42Du2XbMYc_/exec"
 
 local HttpService = game:GetService("HttpService")
 local LP = game:GetService("Players").LocalPlayer
 local delta_request = (syn and syn.request) or request or http_request or (http and http.request)
 
-local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller để an toàn tài khoản
+local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller
 _G.COINS_MAXED = false
 
 local CONFIG = {
@@ -28,10 +27,10 @@ local CONFIG = {
 while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
 LP.Character:WaitForChild("HumanoidRootPart", 30)
 
-print("[DELTA-SYSTEM] ⚙️ Khởi động thành công hệ thống Hợp Nhất cho: " .. LP.Name)
+print("[SYSTEM] ⚙️ Khởi động hệ thống Tự Động Điền cho tài khoản: " .. LP.Name)
 
 -- =================================================================================
--- HÀM GỌI API PHƯƠNG THỨC GET CHỐNG VĂNG CHO DELTA
+-- HÀM KẾT NỐI API QUA URL GET (TỐI ƯU HOÀN HẢO CHO DELTA)
 -- =================================================================================
 local function apiCall(queryString)
     local success, res = pcall(function()
@@ -54,17 +53,23 @@ local function getQueue()
 end
 
 local function setCoin(user, coin)
-    apiCall("?action=setCoin&user=" .. user .. "&coin=" .. tostring(coin))
+    -- Encode khoảng trắng tên nếu có để tránh lỗi URL
+    local encodedUser = game:GetService("HttpService"):UrlEncode(user)
+    apiCall("?action=setCoin&user=" .. encodedUser .. "&coin=" .. tostring(coin))
 end
 
--- LUỒNG ĐỒNG BỘ COIN REALTIME LÊN TRANG TÍNH
+-- ==========================================
+-- LUỒNG TỰ ĐỘNG KHAI BÁO USER VÀ COIN REALTIME LÊN SHEET
+-- ==========================================
 task.spawn(function()
     while true do
         pcall(function()
             local dataFolder = LP:ClearCharacterAppearanceBeforeInstance() or LP:WaitForChild("Data", 10)
             local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
             if coinsObj then
+                -- Tự động gửi tên mình và số coin lên sheet (Sheet sẽ tự điền vào bảng nếu chưa có)
                 setCoin(LP.Name, coinsObj.Value)
+                
                 if coinsObj.Value >= MAX_COINS then
                     _G.COINS_MAXED = true
                 else
@@ -72,12 +77,12 @@ task.spawn(function()
                 end
             end
         end)
-        task.wait(5)
+        task.wait(5) -- 5 giây tự đồng bộ một lần
     end
 end)
 
 -- =================================================================================
--- 🏪 LOGIC SELLER V7 VẬT LÝ: TỰ TREO QUẦY BÁN & CLAIM COIN
+-- LOGIC BÁN VÀ NHẬN TIỀN (SELLER V7)
 -- =================================================================================
 local function getInventoryItems()
     local items = {}
@@ -136,14 +141,13 @@ task.spawn(function()
 end)
 
 -- =================================================================================
--- 🤖 TRÍCH XUẤT 100% LOGIC MUA HÀNG VẬT LÝ NGUYÊN BẢN TỪ FILE SOUR.LUA GỐC CỦA BẠN
+-- LOGIC TÌM QUẦY VÀ THỰC THI MUA HÀNG VẬT LÝ GỐC TỪ SOUR.LUA
 -- =================================================================================
 
--- Hàm phụ tìm kiếm sạp quầy hàng (Booth) của người bán trong khu chợ Undercity công cộng
 local function findSellerBooth(sellerName)
-    local boothsFolder = game:GetService("Workspace"):WaitForChild("Map", 20)
-        and game:GetService("Workspace").Map:WaitForChild("Undercity", 10)
-        and game:GetService("Workspace").Map.Undercity:WaitForChild("PlayerBooths", 10)
+    local boothsFolder = game:GetService("Workspace"):FindFirstChild("Map")
+        and game:GetService("Workspace").Map:FindFirstChild("Undercity")
+        and game:GetService("Workspace").Map.Undercity:FindFirstChild("PlayerBooths")
     
     if not boothsFolder then return nil end
 
@@ -156,43 +160,39 @@ local function findSellerBooth(sellerName)
     return nil
 end
 
--- HÀM MUA HÀNG GỐC CỦA SOUR.LUA (BỎ CHỖ CHÈN - ĐÃ HOÀN THÀNH!)
 local function runScript3(sellerName)
-    print(string.format("[ACTUAL-GAMEPLAY] 💸 Đang định vị vị trí quầy hàng của: %s để mua sỉ...", sellerName))
+    print(string.format("[⚡ SOUR] Đang dò tìm vị trí quầy hàng của: %s", sellerName))
     
     local targetBooth = findSellerBooth(sellerName)
     if not targetBooth then
-        warn(string.format("[ACTUAL-GAMEPLAY] ❌ Không tìm thấy quầy nào của %s đang mở!", sellerName))
+        warn(string.format("[⚡ SOUR] ❌ Không tìm thấy quầy nào của %s trong server!", sellerName))
         return false
     end
 
     local boothModel = targetBooth:FindFirstChild("BoothModel")
     if not boothModel or not boothModel:FindFirstChild("HumanoidRootPart") then
-        warn("[ACTUAL-GAMEPLAY] ❌ Quầy hàng của đối phương bị lỗi cơ cấu vật lý hình khối!")
         return false
     end
 
-    -- Di chuyển nhân vật đứng sát vào quầy hàng của Seller cần hút coin
+    -- Di chuyển vật lý nhân vật đến trước quầy hàng
     local hrp = LP.Character:FindFirstChild("HumanoidRootPart")
     if hrp then
         hrp.CFrame = boothModel.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
         task.wait(0.5)
     end
 
-    -- Thực hiện gọi liên tiếp chuỗi lệnh Remote gốc để quét sạch đồ trên kệ
     local buySuccess = false
     pcall(function()
-        -- Lệnh 1: Gửi tín hiệu mở tương tác giao dịch với Quầy hàng cụ thể
+        -- Gửi tín hiệu tương tác mở quầy (Interact)
         CONFIG.MARKET_REMOTE:InvokeServer("Interact", targetBooth)
         task.wait(0.3)
 
-        -- Lệnh 2: Quét qua tất cả danh sách các sản phẩm đang treo trên sạp quầy hàng đó
+        -- Quét qua các món đồ đang treo trên kệ để sút mua sạch (BuyItem)
         local listings = targetBooth:FindFirstChild("Listings")
         if listings then
             for _, item in ipairs(listings:GetChildren()) do
-                -- Gọi lệnh sút mua trực tiếp bằng ID của món hàng (Cơ chế Remote gốc trong SOUR.lua)
                 CONFIG.MARKET_REMOTE:InvokeServer("BuyItem", targetBooth, item.Name)
-                print(string.format("[ACTUAL-GAMEPLAY] ✅ Đã sút mua thành công Item ID: %s từ %s", item.Name, sellerName))
+                print(string.format("[⚡ SOUR] ✅ Đã sút mua thành công món hàng ID: %s", item.Name))
                 buySuccess = true
                 task.wait(0.1)
             end
@@ -203,47 +203,46 @@ local function runScript3(sellerName)
 end
 
 -- =================================================================================
--- BỘ NÃO ĐIỀU PHỐI CHUỖI TỊNH TIẾN QUA SỐ LIỆU ĐÃ HỢP NHẤT
+-- LUỒNG ĐIỀU PHỐI CHUỖI TIỀN TỰ ĐỘNG
 -- =================================================================================
 task.spawn(function()
-    print("[CHAIN-ENGINE] 🚀 Tiến trình xử lý chuỗi tịnh tiến đã sẵn sàng hoạt động!")
+    print("[CHAIN] 🚀 Tiến trình rà soát chuỗi Domino bắt đầu chạy!")
     
     while true do
         local queue = getQueue()
         
         if queue and #queue >= 2 then
             for i = 1, #queue - 1 do
-                local accA = queue[i]     -- Acc trước (Cấp tiền)
-                local accB = queue[i + 1] -- Acc sau (Nhận tiền)
+                local accA = queue[i]     -- Acc cấp tiền (Index đứng trước)
+                local accB = queue[i + 1] -- Acc nhận tiền (Index đứng sau)
 
-                -- Điều kiện kích hoạt: Nếu nick hiện tại chính là AccB, và phát hiện AccA đứng trước có tiền mặt dư trên Sheet
+                -- Nếu tên mình là AccB (đứng sau) và thấy acc đứng trước mình đang có tiền trên Sheet
                 if LP.Name:lower() == accB.user:lower() and accA.coin > 0 then
                     
-                    print(string.format("[CHAIN-ENGINE] 🎯 Phát hiện mục tiêu: %s (Index %d) đang giữ %d Coins.", accA.user, accA.index, accA.coin))
+                    print(string.format("[CHAIN] 🎯 Phát hiện mục tiêu: Acc %s đang giữ %d Coins.", accA.user, accA.coin))
                     
-                    -- Kích hoạt hàm mua vật lý thực tế đã nhặt từ SOUR.lua bên trên
+                    local transferValue = accA.coin
+                    
+                    -- Kích hoạt hàm mua đồ vật lý lấy từ SOUR.lua bên trên
                     local successBuy = runScript3(accA.user)
                     
                     if successBuy then
-                        print("[CHAIN-ENGINE] ✅ Đã mua thành công trong game! Đang cập nhật lại số liệu về Sheet...")
+                        print("[CHAIN] ✅ Mua thành công! Đang đồng bộ số liệu dồn tiền...")
                         
-                        -- Bước 1: Trừ số coin của acc trước về 0 ngay lập tức để đóng băng chuỗi
+                        -- Bước 1: Trừ coin của acc trước về 0
                         setCoin(accA.user, 0)
                         task.wait(0.5)
                         
-                        -- Bước 2: Dồn số coin đó cộng trực tiếp vào tài khoản của bản thân trên Sheet
-                        local myNewBalance = accB.coin + accA.coin
+                        -- Bước 2: Cộng dồn tiền vào tài khoản của mình
+                        local myNewBalance = accB.coin + transferValue
                         setCoin(LP.Name, myNewBalance)
                         
-                        print(string.format("[CHAIN-ENGINE] 🎉 Hoàn tất vòng dồn tiền! Số dư mới trên Sheet: %d Coins.", myNewBalance))
-                    else
-                        warn("[CHAIN-ENGINE] ❌ Lỗi cơ học trong game (Có thể quầy chưa mở hoặc món đồ bị lỗi) -> Sẽ thử lại sau.")
+                        print(string.format("[CHAIN] 🎉 Đã dồn toàn bộ tiền sang ví của tôi: %d Coins.", myNewBalance))
                     end
-                    
                     task.wait(2)
                 end
             end
         end
-        task.wait(5) -- Định kỳ 5 giây rà soát bảng thông báo Sheet để đưa ra quyết định
+        task.wait(5)
     end
 end)
