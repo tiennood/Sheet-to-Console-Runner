@@ -1,248 +1,194 @@
 --[[
 ================================================================================
-       🤖 DELTA SPECIAL: FULL AUTO-REGISTER HYBRID SYSTEM (GET-METHOD) 🤖
+A-SC 99% — DYNAMIC MARKET CHAIN (ULTRA CLEAN & OPTIMIZED)
+- Cố định vật phẩm: Apple (Số lượng: 1)
+- Tự động nhận diện cấu hình theo tên tài khoản từ JSON
+- CHỈ GIỮ LUỒNG: MUA CHUỖI, TREO CHỢ VÀ TỰ CLAIM TIỀN (KHÔNG TELEPORT, KHÔNG UI)
+- UPDATE: Nếu ITEM_PRICE = 0 -> KHÔNG TREO BÁN ĐỒ
 ================================================================================
-- Tự động gửi Username và Coin lên Sheet để đăng ký Index (Không cần nhập tay).
-- Đã tích hợp 100% logic di chuyển, mở quầy và mua đồ thực tế từ SOUR.lua.
+]]
+wait(5);
+
+-- 🛑 NHẬP CHUỒI JSON CỦA BẠN TẠI ĐÂY
+local JSON_INPUT = [[
+[
+  {"user":"WOQ_ceGx3547","BUYER_NAMES":"YUP_dqpp2754","ITEM_PRICE":"0"},
+  {"user":"YUP_dqpp2754","BUYER_NAMES":"DKY_Vl8e4688","ITEM_PRICE":"3123"},
+  {"user":"DKY_Vl8e4688","BUYER_NAMES":"","ITEM_PRICE":"17464"}
+]
 ]]
 
-if not game:IsLoaded() then game.Loaded:Wait() end
-task.wait(3)
-
--- 🔴 DÁN ĐOẠN LINK WEB APP URL MỚI CỦA BẠN VÀO ĐÂY
-local SHEETS_URL = "https://script.google.com/macros/s/AKfycbyribuFmeOwq-G2oQWElqw7PbE1JYj_72vidGmXgX5fsDqeN95-J-K9c42Du2XbMYc_/exec"
-
+-- =================================================================================
+-- DYNAMIC CONFIGURATION (TỰ ĐỘNG KHỚP CONFIG TỪ JSON)
+-- =================================================================================
 local HttpService = game:GetService("HttpService")
-local LP = game:GetService("Players").LocalPlayer
-local delta_request = (syn and syn.request) or request or http_request or (http and http.request)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-local MAX_COINS = 100000000 -- 100M chặn tối đa của Seller
-_G.COINS_MAXED = false
-
+-- Cấu hình vật phẩm cố định Apple số lượng 1
 local CONFIG = {
-    UNDERCITY_ID = 4601778915,
-    MARKET_REMOTE = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerMarketRemote")
+    ITEM_NAME = "Apple",
+    ITEM_TYPE = "Resources",
+    ITEM_AMOUNT = 1, 
+    ITEM_PRICE = 0,          -- Sẽ nạp từ JSON
+    TARGET_BUYER_NAMES = {}, -- Sẽ nạp từ JSON
+    CLAIM_SPEED = 0.3,
+    SELL_SPEED = 0.3,
 }
 
-while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
-LP.Character:WaitForChild("HumanoidRootPart", 30)
-
-print("[SYSTEM] ⚙️ Khởi động hệ thống Tự Động Điền cho tài khoản: " .. LP.Name)
-
--- =================================================================================
--- HÀM KẾT NỐI API QUA URL GET (TỐI ƯU HOÀN HẢO CHO DELTA)
--- =================================================================================
-local function apiCall(queryString)
-    local success, res = pcall(function()
-        return delta_request({
-            Url = SHEETS_URL .. queryString,
-            Method = "GET"
-        })
-    end)
-    if success and res and res.Body then return res.Body end
-    return nil
-end
-
-local function getQueue()
-    local body = apiCall("?action=getQueue")
-    if body then 
-        local success, decoded = pcall(function() return HttpService:JSONDecode(body) end)
-        if success then return decoded end
-    end
-    return nil
-end
-
-local function setCoin(user, coin)
-    -- Encode khoảng trắng tên nếu có để tránh lỗi URL
-    local encodedUser = game:GetService("HttpService"):UrlEncode(user)
-    apiCall("?action=setCoin&user=" .. encodedUser .. "&coin=" .. tostring(coin))
-end
-
--- ==========================================
--- LUỒNG TỰ ĐỘNG KHAI BÁO USER VÀ COIN REALTIME LÊN SHEET
--- ==========================================
-task.spawn(function()
-    while true do
-        pcall(function()
-            local dataFolder = LP:ClearCharacterAppearanceBeforeInstance() or LP:WaitForChild("Data", 10)
-            local coinsObj = dataFolder:WaitForChild("Currency", 10):WaitForChild("Coins", 10)
-            if coinsObj then
-                -- Tự động gửi tên mình và số coin lên sheet (Sheet sẽ tự điền vào bảng nếu chưa có)
-                setCoin(LP.Name, coinsObj.Value)
-                
-                if coinsObj.Value >= MAX_COINS then
-                    _G.COINS_MAXED = true
-                else
-                    _G.COINS_MAXED = false
-                end
-            end
-        end)
-        task.wait(5) -- 5 giây tự đồng bộ một lần
-    end
+-- Tiến hành quét thông tin tài khoản từ chuỗi JSON
+local parseSuccess, parsedData = pcall(function()
+    return HttpService:JSONDecode(JSON_INPUT)
 end)
 
--- =================================================================================
--- LOGIC BÁN VÀ NHẬN TIỀN (SELLER V7)
--- =================================================================================
-local function getInventoryItems()
-    local items = {}
-    pcall(function()
-        local inv = LP:WaitForChild("Data", 10):WaitForChild("Inventory", 10)
-        for _, item in ipairs(inv:GetChildren()) do
-            if item:IsA("NumberValue") and item.Value > 0 then
-                table.insert(items, { Name = item.Name, Amount = item.Value })
+if parseSuccess and parsedData then
+    local matched = false
+    for _, item in ipairs(parsedData) do
+        if item.user == LocalPlayer.Name then
+            CONFIG.ITEM_PRICE = tonumber(item.ITEM_PRICE) or 0
+            
+            -- Thiết lập luồng mua dựa trên BUYER_NAMES
+            if item.BUYER_NAMES and item.BUYER_NAMES ~= "" then
+                CONFIG.TARGET_BUYER_NAMES = { item.BUYER_NAMES }
+                if CONFIG.ITEM_PRICE > 0 then
+                    print(("[HỆ THỐNG] Acc: %s | Sẽ đi MUA của: %s | Treo BÁN giá: %d"):format(LocalPlayer.Name, item.BUYER_NAMES, CONFIG.ITEM_PRICE))
+                else
+                    print(("[HỆ THỐNG] Acc: %s | Sẽ đi MUA của: %s | ❌ KHÔNG TREO BÁN (Giá bằng 0)"):format(LocalPlayer.Name, item.BUYER_NAMES))
+                end
+            else
+                CONFIG.TARGET_BUYER_NAMES = {}
+                if CONFIG.ITEM_PRICE > 0 then
+                    print(("[HỆ THỐNG] Acc CUỐI CÙNG: %s | Không mua của ai | CHỈ TREO BÁN giá: %d"):format(LocalPlayer.Name, CONFIG.ITEM_PRICE))
+                else
+                    print(("[HỆ THỐNG] Acc CUỐI CÙNG: %s | ❌ KHÔNG MUA - KHÔNG BÁN (Giá bằng 0)"):format(LocalPlayer.Name))
+                end
             end
+            matched = true
+            break
         end
-    end)
-    return items
+    end
+    if not matched then
+        warn("[HỆ THỐNG] ❌ Tên tài khoản này không nằm trong cấu hình JSON!")
+    end
+else
+    warn("[HỆ THỐNG] ❌ Lỗi phân tích cú pháp chuỗi JSON!")
 end
+
+-- =================================================================================
+-- SERVICES & REMOTES
+-- =================================================================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local function sellItem()
-    pcall(function()
-        local inventory = getInventoryItems()
-        if #inventory == 0 then return end
-        
-        table.sort(inventory, function(a, b) return a.Amount > b.Amount end)
-        local target = inventory[1]
-        
-        local currentPrice = 99999
-        if target.Name:lower():find("apple") then currentPrice = 110 end
-
-        local args = {
-            [1] = "Publish",
-            [2] = { ["Price"] = currentPrice, ["ItemName"] = target.Name, ["Amount"] = 1 }
-        }
-        CONFIG.MARKET_REMOTE:InvokeServer(unpack(args))
-    end)
+    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SellPlayerMarketRemote"):InvokeServer({
+        Price = CONFIG.ITEM_PRICE,
+        ItemType = CONFIG.ITEM_TYPE,
+        Name = CONFIG.ITEM_NAME,
+        Amount = CONFIG.ITEM_AMOUNT
+    })
 end
 
-local function claimMarket()
-    pcall(function()
-        CONFIG.MARKET_REMOTE:InvokeServer(unpack({ [1] = "ClaimAll" }))
-    end)
+local function claimCoins(slotIndex)
+    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimPlayerMarketRemote"):FireServer(tostring(slotIndex))
 end
 
-task.spawn(function()
-    while true do
-        if game.PlaceId == CONFIG.UNDERCITY_ID then
-            pcall(function()
-                claimMarket()
-                task.wait(0.3)
-                if not _G.COINS_MAXED then
-                    for _ = 1, 5 do
-                        sellItem()
-                        task.wait(0.1)
+-- =================================================================================
+-- MAIN LOOP RUNNER
+-- =================================================================================
+local function runSellerLoop()
+    print(">>> [MARKET] Bắt đầu kích hoạt luồng xử lý Chợ cho: " .. LocalPlayer.Name)
+
+    -- LUỒNG 1: TỰ ĐỘNG MUA CỦA USER ĐƯỢC CHỈ ĐỊNH TRONG CHUỖI JSON
+    task.spawn(function()
+        local activePurchases = {}
+        while true do
+            if CONFIG.TARGET_BUYER_NAMES and #CONFIG.TARGET_BUYER_NAMES > 0 then
+                for _, name in ipairs(CONFIG.TARGET_BUYER_NAMES) do
+                    if name ~= "" then
+                        local targetPlayer = Players:FindFirstChild(name)
+                        if targetPlayer and not activePurchases[name] then
+                            activePurchases[name] = true
+                            
+                            task.spawn(function()
+                                print("[CHỢ] 🛒 Đã thấy " .. name .. " vào server! Bắt đầu mua dọn Market...")
+                                local purchaseMarketRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchasePlayerMarketRemote", 10)
+                                
+                                if purchaseMarketRemote then
+                                    while Players:FindFirstChild(name) do
+                                        for i = 1, 5 do
+                                            pcall(function()
+                                                if purchaseMarketRemote:IsA("RemoteFunction") then
+                                                    purchaseMarketRemote:InvokeServer({ Index = tostring(i), Player = targetPlayer })
+                                                else
+                                                    purchaseMarketRemote:FireServer({ Index = tostring(i), Player = targetPlayer })
+                                                end
+                                                task.wait(CONFIG.CLAIM_SPEED)
+                                            end)
+                                        end
+                                        task.wait(0.5)
+                                    end
+                                end
+                                print("[CHỢ] ❌ Player " .. name .. " đã rời phòng, dừng luồng mua.")
+                                activePurchases[name] = nil
+                            end)
+                        end
+                    end
+                end
+            end
+            task.wait(5)
+        end
+    end)
+
+    -- LUỒNG 2: LIÊN TỤC QUÉT ĐỂ TREO BÁN SẢN PHẨM VÀ TỰ ĐỘNG CLAIM TIỀN VỀ (MỖI 2 GIÂY)
+    task.spawn(function()
+        while true do
+            local success, err = pcall(function()
+                local dataFolder = LocalPlayer:FindFirstChild("Data")
+                if not dataFolder then return end
+
+                local playerMarket = dataFolder:FindFirstChild("PlayerMarket")
+                if playerMarket then
+                    -- Kiểm tra 5 gian hàng của bản thân, nếu có ai mua (Purchased = true) -> Auto Claim
+                    for i = 1, 5 do
+                        local slot = playerMarket:FindFirstChild(tostring(i))
+                        if slot then
+                            local purchasedNode = slot:FindFirstChild("Purchased")
+                            if purchasedNode and purchasedNode.Value == true then
+                                claimCoins(i)
+                            end
+                        end
+                    end
+
+                    -- CHỈ TIẾN HÀNH TREO BÁN NẾU GIÁ ĐỊNH HƯỚNG LỚN HƠN 0
+                    if CONFIG.ITEM_PRICE > 0 then
+                        task.spawn(function()
+                            for _ = 1, 5 do
+                                sellItem()
+                                task.wait(0.1)
+                            end
+                        end)
                     end
                 end
             end)
-        end
-        task.wait(2)
-    end
-end)
 
--- =================================================================================
--- LOGIC TÌM QUẦY VÀ THỰC THI MUA HÀNG VẬT LÝ GỐC TỪ SOUR.LUA
--- =================================================================================
-
-local function findSellerBooth(sellerName)
-    local boothsFolder = game:GetService("Workspace"):FindFirstChild("Map")
-        and game:GetService("Workspace").Map:FindFirstChild("Undercity")
-        and game:GetService("Workspace").Map.Undercity:FindFirstChild("PlayerBooths")
-    
-    if not boothsFolder then return nil end
-
-    for _, booth in ipairs(boothsFolder:GetChildren()) do
-        local ownerVal = booth:FindFirstChild("Owner")
-        if ownerVal and ownerVal.Value and ownerVal.Value.Name:lower() == sellerName:lower() then
-            return booth
-        end
-    end
-    return nil
-end
-
-local function runScript3(sellerName)
-    print(string.format("[⚡ SOUR] Đang dò tìm vị trí quầy hàng của: %s", sellerName))
-    
-    local targetBooth = findSellerBooth(sellerName)
-    if not targetBooth then
-        warn(string.format("[⚡ SOUR] ❌ Không tìm thấy quầy nào của %s trong server!", sellerName))
-        return false
-    end
-
-    local boothModel = targetBooth:FindFirstChild("BoothModel")
-    if not boothModel or not boothModel:FindFirstChild("HumanoidRootPart") then
-        return false
-    end
-
-    -- Di chuyển vật lý nhân vật đến trước quầy hàng
-    local hrp = LP.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = boothModel.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
-        task.wait(0.5)
-    end
-
-    local buySuccess = false
-    pcall(function()
-        -- Gửi tín hiệu tương tác mở quầy (Interact)
-        CONFIG.MARKET_REMOTE:InvokeServer("Interact", targetBooth)
-        task.wait(0.3)
-
-        -- Quét qua các món đồ đang treo trên kệ để sút mua sạch (BuyItem)
-        local listings = targetBooth:FindFirstChild("Listings")
-        if listings then
-            for _, item in ipairs(listings:GetChildren()) do
-                CONFIG.MARKET_REMOTE:InvokeServer("BuyItem", targetBooth, item.Name)
-                print(string.format("[⚡ SOUR] ✅ Đã sút mua thành công món hàng ID: %s", item.Name))
-                buySuccess = true
-                task.wait(0.1)
-            end
+            if not success then warn("[CHỢ] Lỗi xử lý vòng lặp treo bán/claim: ", err) end
+            task.wait(2)
         end
     end)
-
-    return buySuccess
 end
 
 -- =================================================================================
--- LUỒNG ĐIỀU PHỐI CHUỖI TIỀN TỰ ĐỘNG
+-- BẮT ĐẦU CHẠY HỆ THỐNG
 -- =================================================================================
-task.spawn(function()
-    print("[CHAIN] 🚀 Tiến trình rà soát chuỗi Domino bắt đầu chạy!")
-    
-    while true do
-        local queue = getQueue()
-        
-        if queue and #queue >= 2 then
-            for i = 1, #queue - 1 do
-                local accA = queue[i]     -- Acc cấp tiền (Index đứng trước)
-                local accB = queue[i + 1] -- Acc nhận tiền (Index đứng sau)
+if not game:IsLoaded() then game.Loaded:Wait() end
+while not LocalPlayer.Character or not LocalPlayer.Character.Parent do LocalPlayer.CharacterAdded:Wait() end
+LocalPlayer.Character:WaitForChild("HumanoidRootPart", 30)
+task.wait(2)
 
-                -- Nếu tên mình là AccB (đứng sau) và thấy acc đứng trước mình đang có tiền trên Sheet
-                if LP.Name:lower() == accB.user:lower() and accA.coin > 0 then
-                    
-                    print(string.format("[CHAIN] 🎯 Phát hiện mục tiêu: Acc %s đang giữ %d Coins.", accA.user, accA.coin))
-                    
-                    local transferValue = accA.coin
-                    
-                    -- Kích hoạt hàm mua đồ vật lý lấy từ SOUR.lua bên trên
-                    local successBuy = runScript3(accA.user)
-                    
-                    if successBuy then
-                        print("[CHAIN] ✅ Mua thành công! Đang đồng bộ số liệu dồn tiền...")
-                        
-                        -- Bước 1: Trừ coin của acc trước về 0
-                        setCoin(accA.user, 0)
-                        task.wait(0.5)
-                        
-                        -- Bước 2: Cộng dồn tiền vào tài khoản của mình
-                        local myNewBalance = accB.coin + transferValue
-                        setCoin(LP.Name, myNewBalance)
-                        
-                        print(string.format("[CHAIN] 🎉 Đã dồn toàn bộ tiền sang ví của tôi: %d Coins.", myNewBalance))
-                    end
-                    task.wait(2)
-                end
-            end
-        end
-        task.wait(5)
-    end
-end)
+print("[HỆ THỐNG] Nhân vật đã tải xong: " .. LocalPlayer.Name)
+print("[HỆ THỐNG] Vận hành chuỗi giao dịch ngay lập tức tại map hiện tại!")
+runSellerLoop()
+
+while true do
+    task.wait(60)
+end
