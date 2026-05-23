@@ -1,17 +1,134 @@
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 
--- ===== TELEPORT =====
+-- Cấu hình mặc định hệ thống
+local CONFIG = {
+    ITEM_NAME = "Apple",
+    ITEM_TYPE = "Resources",
+    ITEM_AMOUNT = 1, 
+    ITEM_PRICE = 0,
+    TARGET_BUYER_NAMES = {},
+    CLAIM_SPEED = 0.3,
+    isChainRunning = false
+}
+
+-- =================================================================================
+-- LOGIC FUNCTIONS (MARKET CHAIN)
+-- =================================================================================
+local function sellItem()
+    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SellPlayerMarketRemote"):InvokeServer({
+        Price = CONFIG.ITEM_PRICE,
+        ItemType = CONFIG.ITEM_TYPE,
+        Name = CONFIG.ITEM_NAME,
+        Amount = CONFIG.ITEM_AMOUNT
+    })
+end
+
+local function claimCoins(slotIndex)
+    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ClaimPlayerMarketRemote"):FireServer(tostring(slotIndex))
+end
+
+-- Hàm kích hoạt chạy chuỗi lấy dữ liệu từ TextBox
+local function startMarketChain(jsonString)
+    if CONFIG.isChainRunning then return end
+    
+    if jsonString == "" or jsonString == "Dán chuỗi JSON vào đây trước khi chạy..." then
+        warn("[HỆ THỐNG] ❌ Vui lòng nhập/dán chuỗi JSON vào ô trống trước!")
+        return false
+    end
+
+    print("[HỆ THỐNG] Đang tiến hành phân tích cú pháp JSON vừa nhập...")
+
+    -- Phân tích dữ liệu nhập từ TextBox
+    local parseSuccess, parsedData = pcall(function() return HttpService:JSONDecode(jsonString) end)
+    if parseSuccess and parsedData then
+        local matched = false
+        for _, item in ipairs(parsedData) do
+            if item.user == player.Name then
+                CONFIG.ITEM_PRICE = tonumber(item.ITEM_PRICE) or 0
+                if item.BUYER_NAMES and item.BUYER_NAMES ~= "" then
+                    CONFIG.TARGET_BUYER_NAMES = { item.BUYER_NAMES }
+                end
+                matched = true break
+            end
+        end
+        if not matched then 
+            warn("[HỆ THỐNG] ❌ Tài khoản này (".. player.Name ..") không có tên trong JSON vừa nhập!") 
+            return false 
+        end
+    else
+        warn("[HỆ THỐNG] ❌ Chuỗi văn bản nhập vào không đúng cấu trúc định dạng JSON!") 
+        return false
+    end
+
+    CONFIG.isChainRunning = true
+    print(">>> [MARKET] KÍCH HOẠT THÀNH CÔNG CHUỖI CHO: " .. player.Name)
+
+    -- Luồng 1: Tự động gom hàng của acc trước
+    task.spawn(function()
+        local activePurchases = {}
+        while true do
+            if CONFIG.TARGET_BUYER_NAMES and #CONFIG.TARGET_BUYER_NAMES > 0 then
+                for _, name in ipairs(CONFIG.TARGET_BUYER_NAMES) do
+                    if name ~= "" and Players:FindFirstChild(name) and not activePurchases[name] then
+                        activePurchases[name] = true
+                        task.spawn(function()
+                            local pRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchasePlayerMarketRemote", 10)
+                            while Players:FindFirstChild(name) do
+                                for i = 1, 5 do
+                                    pcall(function()
+                                        if pRemote:IsA("RemoteFunction") then pRemote:InvokeServer({ Index = tostring(i), Player = Players[name] })
+                                        else pRemote:FireServer({ Index = tostring(i), Player = Players[name] }) end
+                                        task.wait(CONFIG.CLAIM_SPEED)
+                                    end)
+                                end
+                                task.wait(0.5)
+                            end
+                            activePurchases[name] = nil
+                        end)
+                    end
+                end
+            end
+            task.wait(5)
+        end
+    end)
+
+    -- Luồng 2: Treo bán và tự động claim tiền (Mỗi 2 giây)
+    task.spawn(function()
+        while true do
+            pcall(function()
+                local playerMarket = player:WaitForChild("Data"):WaitForChild("PlayerMarket")
+                for i = 1, 5 do
+                    local slot = playerMarket:FindFirstChild(tostring(i))
+                    if slot and slot:FindFirstChild("Purchased") and slot.Purchased.Value == true then
+                        claimCoins(i)
+                    end
+                end
+                if CONFIG.ITEM_PRICE > 0 then
+                    task.spawn(function() for _ = 1, 5 do sellItem() task.wait(0.1) end end)
+                end
+            end)
+            task.wait(2)
+        end
+    end)
+    return true
+end
+
+-- =================================================================================
+-- LOGIC FUNCTIONS (TELEPORT)
+-- =================================================================================
 local function tele(x, y, z)
     local char = player.Character
-
     if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame =
-            CFrame.new(x, y, z)
+        char.HumanoidRootPart.CFrame = CFrame.new(x, y, z)
     end
 end
 
--- ===== GUI =====
+-- =================================================================================
+-- INTERFACE (GUI MENU TRÊN TRÁI)
+-- =================================================================================
 local sg = Instance.new("ScreenGui")
 sg.Parent = player:WaitForChild("PlayerGui")
 sg.Name = "MiniTeleportMenu"
@@ -19,97 +136,97 @@ sg.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
 frame.Parent = sg
-frame.Size = UDim2.new(0, 330, 0, 120)
-
--- Góc trái
+frame.Size = UDim2.new(0, 330, 0, 185)
 frame.Position = UDim2.new(0, 10, 0, 40)
-
-frame.BackgroundColor3 =
-    Color3.fromRGB(30, 30, 30)
-
-frame.Active = false
-frame.Draggable = false
-
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Instance.new("UICorner", frame)
 
+local btnContainer = Instance.new("Frame")
+btnContainer.Parent = frame
+btnContainer.Size = UDim2.new(0, 310, 0, 90)
+btnContainer.Position = UDim2.new(0, 10, 0, 10)
+btnContainer.BackgroundTransparency = 1
+
 local layout = Instance.new("UIGridLayout")
-layout.Parent = frame
+layout.Parent = btnContainer
 layout.CellSize = UDim2.new(0, 95, 0, 40)
 layout.CellPadding = UDim2.new(0, 10, 0, 10)
 
--- ===== BUTTON =====
-local function createBtn(text, x, y, z, color)
-
+local function createCustomBtn(text, color, callback)
     local btn = Instance.new("TextButton")
-    btn.Parent = frame
-
+    btn.Parent = btnContainer
     btn.Text = text
-
-    btn.BackgroundColor3 =
-        color or Color3.fromRGB(60,60,60)
-
+    btn.BackgroundColor3 = color or Color3.fromRGB(60,60,60)
     btn.TextColor3 = Color3.new(1,1,1)
-    btn.TextSize = 14
+    btn.TextSize = 13
     btn.Font = Enum.Font.GothamBold
-
     Instance.new("UICorner", btn)
-
-    btn.MouseButton1Click:Connect(function()
-
-        tele(x, y, z)
-
-    end)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
 end
 
--- ===== TELEPORTS =====
-createBtn(
-    "🗺 Map",
-    -143.17, 136.41, -90.28,
-    Color3.fromRGB(0,120,215)
-)
+-- ===== NÚT DỊCH CHUYỂN =====
+createCustomBtn("🗺 Map", Color3.fromRGB(0,120,215), function() tele(-143.17, 136.41, -90.28) end)
+createCustomBtn("🤝 Trade", Color3.fromRGB(200,120,0), function() tele(-1000.12, 357.23, -601.38) end)
+createCustomBtn("🚧 Giới hạn", Color3.fromRGB(180,50,50), function() tele(-1259.12, 312.86, -1948.69) end)
 
-createBtn(
-    "🤝 Trade",
-    -1000.12, 357.23, -601.38,
-    Color3.fromRGB(200,120,0)
-)
+-- ===== NÚT WEBHOOK DA =====
+createCustomBtn("🌐 Webhook DA", Color3.fromRGB(102, 51, 153), function()
+    print("[HỆ THỐNG] Đang nạp Webhook...")
+    local success, err = pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/tiennood/Sheet-to-Console-Runner/refs/heads/main/webhook%20%20DA"))()
+    end)
+    if not success then warn("Lỗi chạy Webhook: ", err) end
+end)
 
-createBtn(
-    "🚧 Giới hạn",
-    -1259.12, 312.86, -1948.69,
-    Color3.fromRGB(180,50,50)
-)
+-- ===== Ô NHẬP TEXTBOX JSON =====
+local jsonTextBox = Instance.new("TextBox")
+jsonTextBox.Parent = frame
+jsonTextBox.Size = UDim2.new(0, 310, 0, 65)
+jsonTextBox.Position = UDim2.new(0, 10, 0, 110)
+jsonTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+jsonTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+jsonTextBox.TextSize = 11
+jsonTextBox.Font = Enum.Font.SourceSans
+jsonTextBox.Text = ""
+jsonTextBox.PlaceholderText = "Dán chuỗi JSON vào đây trước khi chạy..."
+jsonTextBox.TextWrapped = true
+jsonTextBox.MultiLine = true
+jsonTextBox.ClearTextOnFocus = false
+jsonTextBox.TextXAlignment = Enum.TextXAlignment.Left
+jsonTextBox.TextYAlignment = Enum.TextYAlignment.Top
+Instance.new("UICorner", jsonTextBox)
 
--- ===== TOGGLE =====
+-- ===== NÚT CHẠY CHUỖI GIAO DỊCH =====
+local chainBtn
+chainBtn = createCustomBtn("🛒 Chạy Chuỗi", Color3.fromRGB(46, 139, 87), function()
+    local success = startMarketChain(jsonTextBox.Text)
+    if success then
+        chainBtn.Text = "✅ Đang Chạy"
+        chainBtn.BackgroundColor3 = Color3.fromRGB(34, 112, 69)
+        jsonTextBox.Active = false
+    end
+end)
+
+-- ===== NÚT TOGGLE MENU =====
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Parent = sg
 toggleBtn.Size = UDim2.new(0, 60, 0, 30)
-
--- Nút MENU góc trái
 toggleBtn.Position = UDim2.new(0, 10, 0, 5)
-
 toggleBtn.Text = "MENU"
-
-toggleBtn.BackgroundColor3 =
-    Color3.fromRGB(0,0,0)
-
-toggleBtn.TextColor3 =
-    Color3.new(1,1,1)
-
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+toggleBtn.TextColor3 = Color3.new(1,1,1)
+toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.ZIndex = 999
-
 Instance.new("UICorner", toggleBtn)
 
 toggleBtn.MouseButton1Click:Connect(function()
-
     frame.Visible = not frame.Visible
-
 end)
 
--- =====================================
--- COIN DISPLAY (GÓC DƯỚI TRÁI)
--- =====================================
-
+-- =================================================================================
+-- COIN DISPLAY (GÓC DƯỚI TRÁI - GIỮ NGUYÊN HOÀN TOÀN GIÁ TRỊ GỐC CỦA BẠN)
+-- =================================================================================
 local label = Instance.new("TextLabel")
 label.Parent = sg
 
@@ -121,58 +238,30 @@ label.Position = UDim2.new(0, 10, 1, -60)
 label.BackgroundTransparency = 0.3
 label.TextScaled = true
 label.TextColor3 = Color3.new(1,1,1)
-
--- coin value
-local coins =
-    player.Data.Currency.Coins
-
-local function updateCoins()
-
-    label.Text =
-        "Coins: " ..
-        tostring(coins.Value)
-end
-
-updateCoins()
-
-coins:GetPropertyChangedSignal("Value")
-:Connect(updateCoins)
+label.Font = Enum.Font.GothamBold
+Instance.new("UICorner", label)
 
 -- ===== FORMAT NUMBER =====
 local function formatNumber(n)
-
     local s = tostring(n)
-
     while true do
-
-        s, k =
-            s:gsub(
-                "^(-?%d+)(%d%d%d)",
-                "%1,%2"
-            )
-
+        local k
+        s, k = s:gsub("^(-?%d+)(%d%d%d)", "%1,%2")
         if k == 0 then
             break
         end
     end
-
     return s
 end
 
 -- ===== GET COINS =====
-local coins =
-    player:WaitForChild("Data")
-    :WaitForChild("Currency")
-    :WaitForChild("Coins")
+task.spawn(function()
+    local coins = player:WaitForChild("Data"):WaitForChild("Currency"):WaitForChild("Coins")
 
-local function updateCoins()
+    local function updateCoins()
+        label.Text = "🪙 Coins: " .. formatNumber(coins.Value)
+    end
 
-    coinLabel.Text =
-        "🪙 Coins: " ..
-        formatNumber(coins.Value)
-end
-
-updateCoins()
-
-coins:GetPropertyChangedSignal("Value")
-:Connect(updateCoins)
+    updateCoins()
+    coins:GetPropertyChangedSignal("Value"):Connect(updateCoins)
+end)
