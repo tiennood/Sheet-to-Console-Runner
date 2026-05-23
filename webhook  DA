@@ -1,5 +1,5 @@
 -- =================================================================================
--- TỰ ĐỘNG GỬI USER & COIN LÊN GOOGLE APPS SCRIPT WEBHOOK (MỖI 60 GIÂY)
+-- GỬI USER & COIN LÊN GOOGLE APPS SCRIPT WEBHOOK (GỬI DUY NHẤT 1 LẦN RỒI DỪNG HẲN)
 -- =================================================================================
 task.spawn(function()
     local lp = game:GetService("Players").LocalPlayer
@@ -22,28 +22,25 @@ task.spawn(function()
         return 
     end
     
-    print("[WEBHOOK] 🔄 Đã bắt đầu tiến trình theo dõi và gửi Coin lên Webhook...")
+    -- Lấy giá trị tên và số xu hiện tại
+    local currentCoins = coinsObj.Value
+    local userName = lp.Name
     
-    while true do
-        local currentCoins = coinsObj.Value
-        local userName = lp.Name
-        
-        -- Tiến hành gửi request GET qua pcall để tránh crash script nếu mạng lỗi
-        local success, err = pcall(function()
-            req({
-                -- Truyền tham số 'user' và 'coins' lên URL (bạn có thể đổi tên tham số theo code Google Script của bạn)
-                Url = WEBHOOK_URL .. "?user=" .. tostring(userName) .. "&coins=" .. tostring(currentCoins),
-                Method = "GET"
-            })
-        end)
-        
-        if success then
-            print("[WEBHOOK] ✅ Đã gửi thành công | User: " .. userName .. " | Coin: " .. tostring(currentCoins))
-        else
-            warn("[WEBHOOK] ❌ Lỗi khi gửi dữ liệu lên Webhook: " .. tostring(err))
-        end
-        
-        -- Đợi 60 giây cho lần gửi tiếp theo để bảo vệ hạn ngạch (quota) của Google Script không bị khóa spam
-        task.wait(60)
+    print("[WEBHOOK] 🔄 Đang tiến hành gửi dữ liệu lên Webhook (Gửi 1 lần)...")
+    
+    -- Gửi duy nhất 1 request GET
+    local success, err = pcall(function()
+        req({
+            Url = WEBHOOK_URL .. "?user=" .. tostring(userName) .. "&coins=" .. tostring(currentCoins),
+            Method = "GET"
+        })
+    end)
+    
+    if success then
+        print("[WEBHOOK] ✅ Đã gửi thành công duy nhất 1 lần | User: " .. userName .. " | Coin: " .. tostring(currentCoins))
+    else
+        warn("[WEBHOOK] ❌ Lỗi khi gửi dữ liệu lên Webhook: " .. tostring(err))
     end
+    
+    -- Kết thúc hàm, hoàn toàn không có vòng lặp chạy ngầm tốn tài nguyên máy máy!
 end)
