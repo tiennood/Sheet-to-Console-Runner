@@ -1,160 +1,49 @@
+-- =================================================================================
+-- TỰ ĐỘNG GỬI USER & COIN LÊN GOOGLE APPS SCRIPT WEBHOOK (MỖI 60 GIÂY)
+-- =================================================================================
 task.spawn(function()
+    local lp = game:GetService("Players").LocalPlayer
+    
+    -- Đợi tải dữ liệu Coins của nhân vật
+    local dataFolder = lp:WaitForChild("Data", 30)
+    if not dataFolder then warn("[WEBHOOK] ❌ Không tìm thấy Data folder!") return end
+    local currency = dataFolder:WaitForChild("Currency", 30)
+    if not currency then warn("[WEBHOOK] ❌ Không tìm thấy Currency folder!") return end
+    local coinsObj = currency:WaitForChild("Coins", 30)
+    if not coinsObj then warn("[WEBHOOK] ❌ Không tìm thấy Coins value!") return end
 
-    local Players =
-        game:GetService("Players")
-
-    local HttpService =
-        game:GetService("HttpService")
-
-    local p =
-        Players.LocalPlayer
-
-    -- auto request detect
-    local req =
-        (syn and syn.request)
-        or (http and http.request)
-        or http_request
-        or (fluxus and fluxus.request)
-        or request
-
-    if not req then
-        warn("❌ No request function")
-        return
+    -- Cấu hình URL Webhook của bạn
+    local WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec"
+    
+    -- Kiểm tra hỗ trợ Http Request của Executor
+    local req = (syn and syn.request) or request or http_request
+    if not req then 
+        warn("[WEBHOOK] ❌ Executor của bạn không hỗ trợ HttpRequest!")
+        return 
     end
-
-    local WEBHOOK_URL =
-"https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec"
-
-    -- =====================================
-    -- GET INVENTORY
-    -- =====================================
-
-     local function getInventory()
-
-        local result = {}
-
-        local data =
-            p:FindFirstChild("Data")
-
-        if not data then
-            return result
-        end
-
-        -- scan toàn bộ descendants
-        for _, obj in pairs(
-            data:GetDescendants()
-        ) do
-
-            if (
-                obj:IsA("IntValue")
-                or obj:IsA("NumberValue")
-            ) then
-
-                -- chỉ lấy inventory_
-                if string.find(
-                    obj.Name,
-                    "inventory_"
-                ) then
-
-                    local cleanName =
-                        obj.Name:gsub(
-                            "inventory_",
-                            ""
-                        )
-
-                    result[cleanName] =
-                        obj.Value
-                end
-            end
-        end
-
-        return result
-    end
-
-    -- =====================================
-    -- SEND WEBHOOK
-    -- =====================================
-
-    local function sendData()
-
-        local coins = 0
-
-        pcall(function()
-
-            coins =
-                p.Data
-                .Currency
-                .Coins
-                .Value
-
+    
+    print("[WEBHOOK] 🔄 Đã bắt đầu tiến trình theo dõi và gửi Coin lên Webhook...")
+    
+    while true do
+        local currentCoins = coinsObj.Value
+        local userName = lp.Name
+        
+        -- Tiến hành gửi request GET qua pcall để tránh crash script nếu mạng lỗi
+        local success, err = pcall(function()
+            req({
+                -- Truyền tham số 'user' và 'coins' lên URL (bạn có thể đổi tên tham số theo code Google Script của bạn)
+                Url = WEBHOOK_URL .. "?user=" .. tostring(userName) .. "&coins=" .. tostring(currentCoins),
+                Method = "GET"
+            })
         end)
-
-        local payload = {
-
-            player =
-                p.Name,
-
-            time =
-                os.time(),
-
-            coin =
-                coins,
-
-            inventory =
-                getInventory()
-        }
-
-        local success, response =
-            pcall(function()
-
-                return req({
-
-                    Url =
-                        WEBHOOK_URL,
-
-                    Method =
-                        "POST",
-
-                    Headers = {
-                        ["Content-Type"] =
-                            "application/json"
-                    },
-
-                    Body =
-                        HttpService:JSONEncode(
-                            payload
-                        )
-                })
-
-            end)
-
-        if success and response then
-
-            print(
-                "✅ SENT",
-                response.StatusCode
-            )
-
-            if response.Body then
-                print(response.Body)
-            end
-
+        
+        if success then
+            print("[WEBHOOK] ✅ Đã gửi thành công | User: " .. userName .. " | Coin: " .. tostring(currentCoins))
         else
-
-            warn("❌ FAILED")
-            warn(response)
-
+            warn("[WEBHOOK] ❌ Lỗi khi gửi dữ liệu lên Webhook: " .. tostring(err))
         end
+        
+        -- Đợi 60 giây cho lần gửi tiếp theo để bảo vệ hạn ngạch (quota) của Google Script không bị khóa spam
+        task.wait(60)
     end
-
-    -- first send
-    sendData()
-
-    -- resend every 60s
-    while task.wait(60) do
-
-        sendData()
-
-    end
-
 end)
