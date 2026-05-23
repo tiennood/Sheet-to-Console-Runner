@@ -47,7 +47,7 @@ end)
 -- =================================================================================
 task.spawn(function()
     -- THAY THẾ LINK SHEETS_URL CỦA BẠN VÀO ĐÂY (Link vừa Deploy xong)
-    local SHEETS_URL = "https://script.google.com/macros/s/AKfycbyFa5a5S5BFXMfpQeiJUmc9ANfUMlQPfEU-_xxwTvbO9vf-rs_UL9eYyvgfG9dCk59Q/exec?gid=46630860"
+    local SHEETS_URL = ""
     
     local req = (syn and syn.request) or request or http_request
     if not req then 
