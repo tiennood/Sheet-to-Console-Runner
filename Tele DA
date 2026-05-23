@@ -69,15 +69,17 @@ local function startMarketChain(jsonString)
     -- Luồng 1: Tự động gom hàng của acc trước
     task.spawn(function()
         local activePurchases = {}
-        while true do
+        while CONFIG.isChainRunning do
             if CONFIG.TARGET_BUYER_NAMES and #CONFIG.TARGET_BUYER_NAMES > 0 then
                 for _, name in ipairs(CONFIG.TARGET_BUYER_NAMES) do
+                    if not CONFIG.isChainRunning then break end
                     if name ~= "" and Players:FindFirstChild(name) and not activePurchases[name] then
                         activePurchases[name] = true
                         task.spawn(function()
                             local pRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PurchasePlayerMarketRemote", 10)
-                            while Players:FindFirstChild(name) do
+                            while CONFIG.isChainRunning and Players:FindFirstChild(name) do
                                 for i = 1, 5 do
+                                    if not CONFIG.isChainRunning then break end
                                     pcall(function()
                                         if pRemote:IsA("RemoteFunction") then pRemote:InvokeServer({ Index = tostring(i), Player = Players[name] })
                                         else pRemote:FireServer({ Index = tostring(i), Player = Players[name] }) end
@@ -95,28 +97,35 @@ local function startMarketChain(jsonString)
         end
     end)
 
-  -- Luồng 2: Tự động nhận tiền và CHỈ GỬI ĐÚNG 1 LỆNH BÁN (Không spam liên tục)
+    -- Luồng 2: Tự động nhận tiền và gửi 5 lệnh bán (Mỗi lệnh cách nhau 1 giây)
     task.spawn(function()
-        while true do
+        while CONFIG.isChainRunning do
             pcall(function()
                 local playerMarket = player:WaitForChild("Data"):WaitForChild("PlayerMarket")
                 local hasClaimed = false
                 
                 -- 1. Kiểm tra và tự động nhận tiền (Claim)
                 for i = 1, 5 do
+                    if not CONFIG.isChainRunning then break end
                     local slot = playerMarket:FindFirstChild(tostring(i))
                     if slot and slot:FindFirstChild("Purchased") and slot.Purchased.Value == true then
                         claimCoins(i)
-                        hasClaimed = true -- Đánh dấu là có ô vừa trống do vừa nhận tiền
+                        hasClaimed = true 
                     end
                 end
                 
-                -- 2. CHỈ CHO BÁN 1: Nếu có ô vừa trống và có cấu hình giá tiền
+                -- 2. ĐÃ SỬA: Gửi 5 lần liên tục, giãn cách mỗi lần 1 giây
                 if hasClaimed and CONFIG.ITEM_PRICE > 0 then
-                    sellItem() -- Gọi đúng 1 lần duy nhất để lấp vào ô trống, không lặp 5 lần nữa!
+                    task.spawn(function()
+                        for _ = 1, 5 do
+                            if not CONFIG.isChainRunning then break end
+                            sellItem() 
+                            task.wait(1) -- ĐÃ TĂNG: Chờ đúng 1 giây trước khi gửi lệnh tiếp theo
+                        end
+                    end)
                 end
             end)
-            task.wait(2) -- Chờ 2 giây cho lần quét tiếp theo
+            task.wait(2) 
         end
     end)
     return true
@@ -143,25 +152,23 @@ local function formatNumber(n)
 end
 
 -- =================================================================================
--- INTERFACE (BẢNG MENU CẬP NHẬT THÊM Ô NHẬP TEXTBOX)
+-- INTERFACE (BẢNG MENU CHỨA NÚT CHỨC NĂNG)
 -- =================================================================================
 local sg = Instance.new("ScreenGui")
 sg.Parent = player:WaitForChild("PlayerGui")
 sg.Name = "MiniTeleportMenu"
 sg.ResetOnSpawn = false
 
--- Điều chỉnh Frame tổng cao lên (Size Y = 185) để chứa vừa cả nút lẫn Ô nhập JSON
 local frame = Instance.new("Frame")
 frame.Parent = sg
-frame.Size = UDim2.new(0, 330, 0, 185)
+frame.Size = UDim2.new(0, 330, 0, 240)
 frame.Position = UDim2.new(0, 10, 0, 40)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Instance.new("UICorner", frame)
 
--- Khung chứa phụ độc lập dành riêng cho các Nút (tránh lỗi lấn layout của TextBox)
 local btnContainer = Instance.new("Frame")
 btnContainer.Parent = frame
-btnContainer.Size = UDim2.new(0, 310, 0, 90)
+btnContainer.Size = UDim2.new(0, 310, 0, 140)
 btnContainer.Position = UDim2.new(0, 10, 0, 10)
 btnContainer.BackgroundTransparency = 1
 
@@ -176,19 +183,19 @@ local function createCustomBtn(text, color, callback)
     btn.Text = text
     btn.BackgroundColor3 = color or Color3.fromRGB(60,60,60)
     btn.TextColor3 = Color3.new(1,1,1)
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.Font = Enum.Font.GothamBold
     Instance.new("UICorner", btn)
     btn.MouseButton1Click:Connect(callback)
     return btn
 end
 
--- ===== CÁC NÚT CHỨC NĂNG CŨ =====
+-- ===== HÀNG NÚT 1: DỊCH CHUYỂN =====
 createCustomBtn("🗺 Map", Color3.fromRGB(0,120,215), function() tele(-143.17, 136.41, -90.28) end)
 createCustomBtn("🤝 Trade", Color3.fromRGB(200,120,0), function() tele(-1000.12, 357.23, -601.38) end)
 createCustomBtn("🚧 Giới hạn", Color3.fromRGB(180,50,50), function() tele(-1259.12, 312.86, -1948.69) end)
 
--- ===== NÚT WEBHOOK DA =====
+-- ===== HÀNG NÚT 2: WEBHOOK VÀ CHẠY CHUỖI =====
 createCustomBtn("🌐 Webhook DA", Color3.fromRGB(102, 51, 153), function()
     print("[HỆ THỐNG] Đang nạp Webhook...")
     local success, err = pcall(function()
@@ -197,11 +204,43 @@ createCustomBtn("🌐 Webhook DA", Color3.fromRGB(102, 51, 153), function()
     if not success then warn("Lỗi chạy Webhook: ", err) end
 end)
 
+local chainBtn
+chainBtn = createCustomBtn("🛒 Chạy Chuỗi", Color3.fromRGB(46, 139, 87), function()
+    if CONFIG.isChainRunning then return end
+    local success = startMarketChain(_G.SavedJsonText or jsonTextBox.Text)
+    if success then
+        chainBtn.Text = "✅ Đang Chạy"
+        chainBtn.BackgroundColor3 = Color3.fromRGB(34, 112, 69)
+        jsonTextBox.Active = false
+    end
+end)
+
+-- ===== HÀNG NÚT 3: DỪNG VÀ XÓA =====
+local stopBtn
+stopBtn = createCustomBtn("🛑 Dừng Chuỗi", Color3.fromRGB(162, 36, 36), function()
+    CONFIG.isChainRunning = false
+    chainBtn.Text = "🛒 Chạy Chuỗi"
+    chainBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87)
+    jsonTextBox.Active = true
+    print("[HỆ THỐNG] 🛑 Đã dừng luồng giao dịch ngầm!")
+end)
+
+local clearBtn
+clearBtn = createCustomBtn("🗑️ Xóa JSON", Color3.fromRGB(100, 100, 100), function()
+    CONFIG.isChainRunning = false
+    chainBtn.Text = "🛒 Chạy Chuỗi"
+    chainBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87)
+    jsonTextBox.Text = ""
+    _G.SavedJsonText = nil
+    jsonTextBox.Active = true
+    print("[HỆ THỐNG] 🗑️ Đã xóa sạch TextBox. Sẵn sàng nhập chuỗi JSON mới!")
+end)
+
 -- ===== DÒNG Ô NHẬP TEXTBOX ĐỂ GHI/DÁN CHUỖI JSON =====
 local jsonTextBox = Instance.new("TextBox")
 jsonTextBox.Parent = frame
 jsonTextBox.Size = UDim2.new(0, 310, 0, 65)
-jsonTextBox.Position = UDim2.new(0, 10, 0, 110) -- Nằm gọn gàng phía bên dưới các nút
+jsonTextBox.Position = UDim2.new(0, 10, 0, 160)
 jsonTextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 jsonTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 jsonTextBox.TextSize = 11
@@ -209,20 +248,15 @@ jsonTextBox.Font = Enum.Font.SourceSans
 jsonTextBox.Text = ""
 jsonTextBox.PlaceholderText = "Dán chuỗi JSON vào đây trước khi chạy..."
 jsonTextBox.TextWrapped = true
-jsonTextBox.MultiLine = true                   -- Bắt buộc bật để hỗ trợ dán chuỗi JSON nhiều dòng
-jsonTextBox.ClearTextOnFocus = false           -- Không tự động xóa chữ cũ khi nhấn vào chỉnh sửa
+jsonTextBox.MultiLine = true                   
+jsonTextBox.ClearTextOnFocus = false           
 jsonTextBox.TextXAlignment = Enum.TextXAlignment.Left
 jsonTextBox.TextYAlignment = Enum.TextYAlignment.Top
 Instance.new("UICorner", jsonTextBox)
 
--- ===== NÚT CHẠY CHUỖI GIAO DỊCH (Sẽ kiểm tra chuỗi chữ trong Ô nhập) =====
-local chainBtn
-chainBtn = createCustomBtn("🛒 Chạy Chuỗi", Color3.fromRGB(46, 139, 87), function()
-    local success = startMarketChain(jsonTextBox.Text)
-    if success then
-        chainBtn.Text = "✅ Đang Chạy"
-        chainBtn.BackgroundColor3 = Color3.fromRGB(34, 112, 69)
-        jsonTextBox.Active = false -- Khóa nhập liệu sau khi đã nhận diện thành công chuỗi
+jsonTextBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if jsonTextBox.Text ~= "" and jsonTextBox.Text ~= "Dán chuỗi JSON vào đây trước khi chạy..." then
+        _G.SavedJsonText = jsonTextBox.Text
     end
 end)
 
