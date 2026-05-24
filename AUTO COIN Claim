@@ -1,0 +1,243 @@
+--[[ Tự động bật Auto Farm Coins khi chạy --]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local OldGui = PlayerGui:FindFirstChild("Nexus_Isotopia")
+if OldGui then OldGui:Destroy() end
+
+-- Tạo GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Nexus_Isotopia"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "Main"
+MainFrame.Size = UDim2.new(0, 550, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -210)
+MainFrame.BackgroundColor3 = Color3.fromRGB(10, 11, 14)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 6)
+
+local TopBar = Instance.new("Frame", MainFrame)
+TopBar.Size = UDim2.new(1, 0, 0, 30)
+TopBar.BackgroundColor3 = Color3.fromRGB(13, 14, 18)
+TopBar.BorderSizePixel = 0
+Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 6)
+
+local Title = Instance.new("TextLabel", TopBar)
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.Text = "By: ZeyOnTop"
+Title.TextColor3 = Color3.fromRGB(200, 200, 200)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.BackgroundTransparency = 1
+
+local ButtonContainer = Instance.new("Frame", MainFrame)
+ButtonContainer.Size = UDim2.new(1, 0, 1, -30)
+ButtonContainer.Position = UDim2.new(0, 0, 0, 30)
+ButtonContainer.BackgroundTransparency = 1
+
+local UIListLayout = Instance.new("UIListLayout", ButtonContainer)
+UIListLayout.Padding = UDim.new(0, 12)
+
+-- Các cài đặt
+local Settings = { coinFarm = false, ringFarm = false, playerESP = false }
+local farmedCoins = {}
+local farmedRings = {}
+
+-- Hàm cập nhật ESP
+local function UpdateESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local char = player.Character
+        if char then
+            local highlight = char:FindFirstChild("NexusHi")
+            if highlight then highlight.Enabled = Settings.playerESP end
+            local nameTag = char:FindFirstChild("NexusName")
+            if nameTag then nameTag.Enabled = Settings.playerESP end
+        end
+    end
+end
+
+-- Hàm tạo nút bật/tắt
+local function CreateToggleButton(text, settingKey)
+    local buttonFrame = Instance.new("Frame", ButtonContainer)
+    buttonFrame.Size = UDim2.new(1, -20, 0, 40)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(25, 26, 30)
+    Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", buttonFrame).Color = Color3.fromRGB(45, 46, 50)
+    
+    local label = Instance.new("TextLabel", buttonFrame)
+    label.Size = UDim2.new(1, -50, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.BackgroundTransparency = 1
+    
+    local button = Instance.new("TextButton", buttonFrame)
+    button.Size = UDim2.new(0, 40, 0, 25)
+    button.Position = UDim2.new(1, -50, 0.5, -12.5)
+    button.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    button.Text = ""
+    Instance.new("UICorner", button).CornerRadius = UDim.new(1, 0)
+    
+    local slider = Instance.new("Frame", button)
+    slider.Size = UDim2.new(0, 18, 0, 18)
+    slider.Position = UDim2.new(0, 3, 0.5, -9)
+    slider.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    Instance.new("UICorner", slider).CornerRadius = UDim.new(1, 0)
+    
+    button.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        if settingKey == "ringFarm" then farmedRings = {} end
+        if settingKey == "playerESP" then UpdateESP() end
+        TweenService:Create(slider, TweenInfo.new(0.2), {
+            Position = Settings[settingKey] and UDim2.new(1, -21, 0.5, -9) or UDim2.new(0, 3, 0.5, -9)
+        }):Play()
+        TweenService:Create(button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Settings[settingKey] and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(35, 35, 40)
+        }):Play()
+    end)
+    
+    return button
+end
+
+CreateToggleButton("Autofarm: Coins", "coinFarm")
+CreateToggleButton("Autofarm: Mission Rings", "ringFarm")
+CreateToggleButton("Visuals: Player ESP", "playerESP")
+
+ScreenGui.Parent = PlayerGui
+MainFrame.Parent = ScreenGui
+
+-- Tự động BẬT Auto Farm Coins ngay lập tức
+Settings.coinFarm = true
+-- Cập nhật giao diện nút coinFarm (tìm nút và bật)
+for _, child in ipairs(ButtonContainer:GetChildren()) do
+    if child:IsA("Frame") then
+        local btn = child:FindFirstChildWhichIsA("TextButton")
+        if btn and child:FindFirstChild("TextLabel") and child.TextLabel.Text == "Autofarm: Coins" then
+            -- Simulate click để đồng bộ giao diện
+            btn.MouseButton1Click:Fire()
+            break
+        end
+    end
+end
+
+-- Xử lý ESP khi người chơi xuất hiện
+local function SetupESP(player)
+    if player == LocalPlayer then return end
+    local function onCharacterAdded(character)
+        if not character then return end
+        local highlight = character:FindFirstChild("NexusHi") or Instance.new("Highlight", character)
+        highlight.Name = "NexusHi"
+        highlight.FillColor = Color3.fromRGB(0, 150, 255)
+        highlight.OutlineColor = Color3.new(1, 1, 0)
+        highlight.Enabled = Settings.playerESP
+        
+        local head = character:WaitForChild("Head", 5)
+        if head and not character:FindFirstChild("NexusName") then
+            local billboard = Instance.new("BillboardGui", character)
+            billboard.Name = "NexusName"
+            billboard.Adornee = head
+            billboard.Size = UDim2.new(0, 100, 0, 30)
+            billboard.StudsOffset = Vector3.new(0, 1.5, 0)
+            billboard.AlwaysOnTop = true
+            billboard.Enabled = Settings.playerESP
+            
+            local nameLabel = Instance.new("TextLabel", billboard)
+            nameLabel.Size = UDim2.new(1, 0, 1, 0)
+            nameLabel.Text = player.Name
+            nameLabel.TextColor3 = Color3.new(1, 1, 1)
+            nameLabel.TextSize = 14
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.BackgroundTransparency = 1
+        end
+    end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    if player.Character then onCharacterAdded(player.Character) end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    task.spawn(SetupESP, player)
+end
+Players.PlayerAdded:Connect(SetupESP)
+
+-- Tìm kiếm coin và ring
+local function FindClosestRing(rootPart)
+    local closest, dist = nil, math.huge
+    for _, part in ipairs(workspace:GetDescendants()) do
+        if part:IsA("BasePart") and not farmedRings[part] then
+            local isRing = (part.Color.R > 0.5 and part.Color.G > 0.5 and part.Color.B < 0.5) or
+                           string.find(part.Name:lower(), "ring") or string.find(part.Name:lower(), "target")
+            if isRing and part.Transparency < 0.01 and not part.CanCollide then
+                local d = (rootPart.Position - part.Position).Magnitude
+                if d < dist then
+                    dist = d
+                    closest = part
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Main loop tự động farm
+task.spawn(function()
+    while task.wait(0.05) do  -- giảm tần suất để ổn định hơn
+        local character = LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then continue end
+        
+        if Settings.coinFarm then
+            local closestCoin = nil
+            local minDist = math.huge
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and string.find(obj.Name, "Coin") and not farmedCoins[obj] then
+                    local d = (rootPart.Position - obj.Position).Magnitude
+                    if d < minDist then
+                        minDist = d
+                        closestCoin = obj
+                    end
+                end
+            end
+            if closestCoin then
+                farmedCoins[closestCoin] = true
+                rootPart.Velocity = Vector3.zero
+                rootPart.CFrame = closestCoin.CFrame
+                task.wait(0.1)
+            else
+                farmedCoins = {}
+            end
+        elseif Settings.ringFarm then
+            local ring = FindClosestRing(rootPart)
+            if ring then
+                farmedRings[ring] = true
+                rootPart.Velocity = Vector3.zero
+                rootPart.CFrame = ring.CFrame
+                task.wait(0.2)
+            elseif next(farmedRings) then
+                task.wait(0.5)
+                farmedRings = {}
+            end
+        end
+    end
+end)
+
+-- Ẩn/hiện GUI bằng phím RightControl
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+-- Thông báo (tùy chọn)
+print("✅ Nexus Isotopia - Auto Farm Coins đã được BẬT tự động!")
