@@ -1171,7 +1171,7 @@ local RingWaypoints = {
 
 local function notify(title, text) end
 
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1436937242869239839/0egWjq5WvRxooBuffFKRiJgg6tiuJSL1TvTqp2qzslP9yKx9CzPciQT27QhwL69T3AI-"
+local WEBHOOK_URL = "-"
 local function sendWebhook(message)
     pcall(function()
         local HttpService = game:GetService("HttpService")
