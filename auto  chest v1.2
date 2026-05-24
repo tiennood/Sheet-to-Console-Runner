@@ -1,0 +1,226 @@
+-- =========================================
+-- CẤU HÌNH NÂNG CAO CHO CHEST FARM
+-- =========================================
+local CHEST_RESPAWN_MINUTES = 25        -- Thời gian hồi rương ước tính (phút)
+local FLY_SPEED_CHEST = 300             -- Tốc độ bay (studs/giây) - tốc độ rồng thực tế
+local CHEST_OPEN_MIN_TIME = 2           -- Thời gian mở rương tối thiểu (giây)
+local CHEST_OPEN_MAX_TIME = 4           -- Thời gian mở rương tối đa (giây)
+local BREAK_INTERVAL_MIN = 3            -- Số map tối thiểu trước khi nghỉ
+local BREAK_INTERVAL_MAX = 7            -- Số map tối đa trước khi nghỉ
+local BREAK_DURATION_MIN = 120          -- Thời gian nghỉ tối thiểu (giây)
+local BREAK_DURATION_MAX = 300          -- Thời gian nghỉ tối đa (giây)
+
+-- =========================================
+-- HÀM DI CHUYỂN BẰNG RỒNG (WASD mô phỏng)
+-- =========================================
+local function rideDragonTo(targetPos)
+    local farmer = getFarmer()
+    if not farmer then return false end
+    
+    local hrp = farmer:FindFirstChild("HumanoidRootPart")
+    local humanoid = farmer:FindFirstChild("Humanoid")
+    if not hrp or not humanoid then return false end
+    
+    -- Nếu khoảng cách rất gần, chỉ cần xoay hướng
+    local distance = (hrp.Position - targetPos).Magnitude
+    if distance < 5 then
+        hrp.CFrame = CFrame.lookAt(hrp.Position, targetPos)
+        return true
+    end
+    
+    -- Bay bằng Velocity
+    local startTime = tick()
+    local maxTime = math.max(distance / FLY_SPEED_CHEST, 0.5)
+    
+    while tick() - startTime < maxTime do
+        local currentPos = hrp.Position
+        local dir = (targetPos - currentPos).Unit
+        local remaining = (targetPos - currentPos).Magnitude
+        
+        if remaining < 5 then break end
+        
+        -- Xoay rồng từ từ về hướng mục tiêu (mô phỏng chuột)
+        local newLook = CFrame.lookAt(currentPos, currentPos + dir)
+        hrp.CFrame = hrp.CFrame:Lerp(newLook, 0.1)  -- xoay mượt
+        
+        -- Đặt vận tốc bay (mô phỏng nhấn W)
+        local speed = math.min(FLY_SPEED_CHEST, remaining * 2)  -- giảm tốc khi gần
+        hrp.Velocity = dir * speed
+        
+        task.wait()
+    end
+    
+    -- Dừng hẳn
+    hrp.Velocity = Vector3.new(0, 0, 0)
+    hrp.CFrame = CFrame.lookAt(hrp.Position, targetPos)
+    return true
+end
+
+-- =========================================
+-- HÀM KIỂM TRA RƯƠNG CÒN TỒN TẠI
+-- =========================================
+local function isChestStillValid(chestNode)
+    if not chestNode or not chestNode.Parent then
+        return false
+    end
+    if not chestNode:IsDescendantOf(workspace) then
+        return false
+    end
+    if chestNode:FindFirstChild("TouchInterest") then
+        return false
+    end
+    return true
+end
+
+-- =========================================
+-- CHEST FARM NÂNG CẤP (DI CHUYỂN WASD)
+-- =========================================
+local MapCompletionTimes = {}
+
+local function chestFarmingMode()
+    print("[CHEST FARM] Khởi động chế độ farm rương (di chuyển WASD)...")
+    
+    if game.PlaceId ~= 4869039553 then
+        print("[CHEST FARM] Đang di chuyển về Prehistoric...")
+        teleportToWorld(4869039553)
+        task.wait(999)
+        return
+    end
+    
+    local mapsCompleted = 0
+    local nextBreakAfter = math.random(BREAK_INTERVAL_MIN, BREAK_INTERVAL_MAX)
+    
+    while true do
+        local placeId = game.PlaceId
+        
+        if not ChestCoordinates[placeId] then
+            print("[CHEST FARM] Map không có dữ liệu, về Prehistoric...")
+            teleportToWorld(ChestFarmOrder[1])
+            task.wait(999)
+            continue
+        end
+        
+        local mapName = MapDataGlobal[placeId]
+        print("[CHEST FARM] 📍 Đang farm rương tại: " .. mapName)
+        
+        local blacklisted = {}
+        local farmer = getFarmer()
+        local hrp = farmer and farmer:FindFirstChild("HumanoidRootPart")
+        if not hrp then task.wait(1) continue end
+        
+        -- Xáo trộn tọa độ
+        local coords = {}
+        for _, v in ipairs(ChestCoordinates[placeId]) do
+            table.insert(coords, v)
+        end
+        for i = #coords, 2, -1 do
+            local j = math.random(i)
+            coords[i], coords[j] = coords[j], coords[i]
+        end
+        
+        -- Bay đến từng tọa độ và mở rương
+        for _, targetPos in ipairs(coords) do
+            -- Bay bằng rồng (WASD)
+            rideDragonTo(targetPos)
+            task.wait(math.random(0.5, 1.5))
+            
+            local nodesFolder = workspace:FindFirstChild("Interactions") and 
+                               workspace.Interactions:FindFirstChild("Nodes") and 
+                               workspace.Interactions.Nodes:FindFirstChild("Treasure")
+            
+            if nodesFolder then
+                for _, node in pairs(nodesFolder:GetChildren()) do
+                    if not blacklisted[node] and isChestStillValid(node) then
+                        local pos = node:IsA("Model") and node:GetModelCFrame().Position or node.Position
+                        local dist = (hrp.Position - pos).Magnitude
+                        
+                        if dist < 100 then
+                            -- Bay đến chính xác trên rương
+                            local targetCFrame = node:IsA("Model") and node:GetModelCFrame() or node.CFrame
+                            rideDragonTo(targetCFrame.Position + Vector3.new(0, FARM_HEIGHT_CHEST, 0))
+                            
+                            -- Phát hiện và mở rương
+                            local popRemote = RS:WaitForChild("Remotes"):WaitForChild("PoppedDiscoverIndicatorRemote")
+                            local chestFolder = LP.Data.TreasureChests:FindFirstChild(mapName)
+                            if chestFolder then
+                                local chestData = chestFolder:FindFirstChild(node.Name)
+                                if chestData then
+                                    pcall(function() popRemote:FireServer("TreasureChest", chestData) end)
+                                end
+                            end
+                            
+                            local openDuration = math.random(CHEST_OPEN_MIN_TIME * 10, CHEST_OPEN_MAX_TIME * 10) / 10
+                            local startAtk = tick()
+                            local OpenChestRemote = LP:FindFirstChild("Remotes") and LP.Remotes:FindFirstChild("OpenChestRemote")
+                            
+                            while node.Parent and isChestStillValid(node) and (tick() - startAtk < openDuration) do
+                                hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
+                                
+                                if OpenChestRemote then
+                                    pcall(function()
+                                        for i = 1, 5 do OpenChestRemote:InvokeServer(i, false) end
+                                    end)
+                                end
+                                
+                                if farmer:FindFirstChild("Remotes") and farmer.Remotes:FindFirstChild("PlaySoundRemote") then
+                                    pcall(function()
+                                        farmer.Remotes.PlaySoundRemote:FireServer("Bite", "Destructibles", node)
+                                    end)
+                                end
+                                
+                                task.wait(0.1)
+                            end
+                            
+                            blacklisted[node] = true
+                        end
+                    end
+                end
+            end
+        end
+        
+        MapCompletionTimes[placeId] = tick()
+        mapsCompleted = mapsCompleted + 1
+        
+        -- Nghỉ giải lao
+        if mapsCompleted >= nextBreakAfter then
+            local breakDuration = math.random(BREAK_DURATION_MIN, BREAK_DURATION_MAX)
+            print(string.format("[CHEST FARM] 🛌 Nghỉ giải lao %d giây...", breakDuration))
+            task.wait(breakDuration)
+            mapsCompleted = 0
+            nextBreakAfter = math.random(BREAK_INTERVAL_MIN, BREAK_INTERVAL_MAX)
+        end
+        
+        -- Chọn map tiếp theo (ưu tiên map đã hồi rương)
+        local bestPlaceId = nil
+        local bestWaitTime = math.huge
+        
+        for _, pid in ipairs(ChestFarmOrder) do
+            if pid ~= placeId then
+                local lastTime = MapCompletionTimes[pid] or 0
+                local elapsed = tick() - lastTime
+                local respawnTime = CHEST_RESPAWN_MINUTES * 60
+                local remaining = respawnTime - elapsed
+                
+                if remaining <= 0 then
+                    bestPlaceId = pid
+                    break
+                elseif remaining < bestWaitTime then
+                    bestWaitTime = remaining
+                    bestPlaceId = pid
+                end
+            end
+        end
+        
+        if not bestPlaceId then bestPlaceId = ChestFarmOrder[1] end
+        
+        local remaining = (CHEST_RESPAWN_MINUTES * 60) - ((MapCompletionTimes[bestPlaceId] or 0) > 0 and (tick() - (MapCompletionTimes[bestPlaceId] or 0)) or 99999)
+        if remaining > 0 then
+            print(string.format("[CHEST FARM] ⏳ Chờ %d giây để rương hồi...", math.ceil(remaining)))
+            task.wait(remaining)
+        end
+        
+        print("[CHEST FARM] ✈️ Chuyển đến: " .. MapDataGlobal[bestPlaceId])
+        teleportToWorld(bestPlaceId)
+        task.wait(999)
+    end
+end
