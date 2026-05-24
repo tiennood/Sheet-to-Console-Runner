@@ -1,0 +1,102 @@
+-- =========================================
+-- UNLOCK UNDERCITY + AUTO COIN FARM
+-- =========================================
+if not game:IsLoaded() then game.Loaded:Wait() end
+local LP = game:GetService("Players").LocalPlayer
+while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
+LP.Character:WaitForChild("HumanoidRootPart", 10)
+task.wait(2)
+
+local RS = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- Anti-AFK
+LP.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+-- Kiểm tra Undercity đã mở chưa
+local function isUndercityUnlocked()
+    local ok, val = pcall(function()
+        return LP:WaitForChild("Data"):WaitForChild("Worlds"):WaitForChild("Undercity").Value
+    end)
+    return ok and val
+end
+
+-- Skip tutorial
+local function skipTutorial()
+    local remote = RS:WaitForChild("Remotes"):WaitForChild("SetTutorialStageRemote")
+    local stages = {"HatchingEggs", "GrowingDragon", "SkillsIntroduction", "NextWorld", "Complete"}
+    for _, stage in ipairs(stages) do
+        pcall(function() remote:InvokeServer(stage) end)
+        task.wait(0.5)
+    end
+    task.wait(3)
+end
+
+-- Unlock Undercity (đơn giản)
+local function unlockUndercity()
+    if isUndercityUnlocked() then return end
+    -- Tele về Lobby nếu chưa ở đó
+    if game.PlaceId ~= 3475397644 then
+        RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(3475397644)
+        task.wait(999)
+    end
+    skipTutorial()
+    task.wait(2)
+    -- Thực hiện Egg Quest và Ring Quest (dùng cách ép giá trị, vì script gốc đã làm)
+    -- Đây là cách an toàn hơn: gán trực tiếp giá trị hoàn thành
+    while not isUndercityUnlocked() do
+        pcall(function()
+            LP.Data.GameAnalytics.PostTutorialAnalyticsPlayer.FindOriginsEgg.Value = true
+        end)
+        pcall(function()
+            LP.Data.WorldMissions.Lobby.Missions.RidingRing.Value = true
+        end)
+        task.wait(2)
+    end
+end
+
+-- Chạy unlock trước
+unlockUndercity()
+
+-- Sau khi unlock xong, đảm bảo đang ở Lobby
+if game.PlaceId ~= 3475397644 then
+    RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(3475397644)
+    task.wait(999)
+end
+
+-- Auto Coin Farm
+print("✅ Undercity đã mở! Bắt đầu farm coin tại Lobby...")
+local farmedCoins = {}
+task.spawn(function()
+    while task.wait(0.05) do
+        local character = LP.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then continue end
+
+        local closestCoin = nil
+        local minDist = math.huge
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and string.find(obj.Name, "Coin") and not farmedCoins[obj] then
+                local distance = (rootPart.Position - obj.Position).Magnitude
+                if distance < minDist then
+                    minDist = distance
+                    closestCoin = obj
+                end
+            end
+        end
+
+        if closestCoin then
+            farmedCoins[closestCoin] = true
+            rootPart.Velocity = Vector3.zero
+            rootPart.CFrame = closestCoin.CFrame
+            task.wait(0.1)
+        else
+            farmedCoins = {}
+        end
+    end
+end)
