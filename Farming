@@ -424,7 +424,7 @@ local CONFIG = {
     FarmMapId = 125804922932357, 
     SellMapId = 3475397644,      
     MaxResource = 1000,          
-    TweenSpeed = 0, 
+    TweenSpeed = 150, 
     FarmHeight = -25,             
     ResourceSearchRange = 10000,
     
@@ -592,12 +592,15 @@ end)
 -- ==========================================
 --         HÀM HỖ TRỢ CORE & TỰ ĐỘNG
 -- ==========================================
-local function getDragon()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local folder = char:FindFirstChild("Dragons")
-    if not folder then return end
-    for _, d in pairs(folder:GetChildren()) do if tonumber(d.Name) then return d end end
+local function tweenTo(targetPart, targetCFrame, speed)
+    if not targetPart then return end
+    speed = speed > 0 and speed or 150
+    local distance = (targetPart.Position - targetCFrame.Position).Magnitude
+    local tweenTime = distance / speed
+    local tweenInfo = TweenInfo.new(tweenTime, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(targetPart, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
 end
  
 local function teleportDrops()
@@ -721,8 +724,9 @@ task.spawn(function()
  
             if nearestNode then
                 local dragon = getDragon()
-                if dragon and dragon:FindFirstChild("HumanoidRootPart") then
-                    dragon.HumanoidRootPart.CFrame = CFrame.new(nearestNode.Position.X, nearestNode.Position.Y + CONFIG.FarmHeight, nearestNode.Position.Z)
+                  if dragon and dragon:FindFirstChild("HumanoidRootPart") then
+                    local targetCFrame = CFrame.new(nearestNode.Position.X, nearestNode.Position.Y + CONFIG.FarmHeight, nearestNode.Position.Z)
+                    tweenTo(dragon.HumanoidRootPart, targetCFrame, CONFIG.TweenSpeed)
                 end
                 
                 -- Độ trễ nhỏ sau khi tele tới bãi quặng rồi mới bắt đầu khạc lửa (nhìn tự nhiên hơn)
@@ -746,7 +750,8 @@ task.spawn(function()
                 local target = CONFIG.PatrolPoints[currentPatrolIndex]
                 local d = getDragon()
                 if d and d:FindFirstChild("HumanoidRootPart") then
-                    d.HumanoidRootPart.CFrame = CFrame.new(target)
+                    -- Thay vì biến mất, nhân vật sẽ bay mượt tới điểm target với tốc độ CONFIG.TweenSpeed
+                    tweenTo(d.HumanoidRootPart, CFrame.new(target), CONFIG.TweenSpeed)
                 end
                 
                 task.wait(3.0) -- Tăng thời gian tuần tra chờ bãi quặng hồi lên 3 giây
@@ -2073,7 +2078,7 @@ local function autoChest(mapName)
             else
                 if #CurrentCoordinates > 0 then
                     local targetPos = CurrentCoordinates[CurrentCoordIndex]
-                    hrp.CFrame = CFrame.new(targetPos)
+                    teleportTo(CFrame.new(targetPos))
  
                     CurrentCoordIndex = CurrentCoordIndex + 1
                     if CurrentCoordIndex > #CurrentCoordinates then
