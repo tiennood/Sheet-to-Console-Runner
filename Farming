@@ -441,14 +441,16 @@ end)
 --             CẤU HÌNH (CONFIG)
 -- ==========================================
 local CONFIG = {
-    SellMapId = 3475397644,
-    MaxResource = 1000,
-    TweenSpeed = 0,
-    FarmHeight = -25,
+    FarmMapId = 125804922932357, 
+    SellMapId = 3475397644,      
+    MaxResource = 1000,          
+    TweenSpeed = 0, 
+    FarmHeight = -25,             
     ResourceSearchRange = 10000,
-
-    StuckTimeOut = 90,
-
+    
+    -- Cấu hình Anti-Stuck
+    StuckTimeOut = 90, -- (Giây) Nếu sau 90s không có gì thay đổi sẽ reset
+ 
     PatrolPoints = {
         Vector3.new(-1635.540, 752.665, 296.195),
         Vector3.new(-2112.585, 262.856, -2675.816),
@@ -456,41 +458,6 @@ local CONFIG = {
         Vector3.new(2191.425, 433.441, -26.284),
         Vector3.new(-492.073, 226.464, -1841.384)
     },
-
-    TargetDrops = {
-        "LimestoneResourcesModel",
-        "MistCrystalResourcesModel",
-        "SpiritwoodResourcesModel"
-    }
-}
-
-local FARM_ROTATION = {
-    3475419198, -- Grassland
-    3475422608, -- Jungle
-    3487210751, -- Volcano
-    3623549100, -- Tundra
-    3737848045, -- Ocean
-    3752680052, -- Desert
-    4174118306, -- Fantasy
-    4728805070, -- Toxic
-    4869039553, -- Prehistoric
-}
-
-local currentFarmIndex = 1
-
-local function getNextFarmMap()
-    local mapId = FARM_ROTATION[currentFarmIndex]
-
-    currentFarmIndex += 1
-
-    if currentFarmIndex > #FARM_ROTATION then
-        currentFarmIndex = 1
-    end
-
-    return mapId
-end
-    -- Cấu hình Anti-Stuck
-    
     
     TargetDrops = {
         "LimestoneResourcesModel", "MistCrystalResourcesModel", "SpiritwoodResourcesModel"
@@ -551,16 +518,12 @@ local function mainProgressLogic()
             end
         end
  
-       if Limestone.Value < 100 then
-    local nextMap = getNextFarmMap()
-
-    print("[AUTO FARM] NEXT MAP:", nextMap)
-
-    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(nextMap)
-end
+        if Limestone.Value < 100 then
+            ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.FarmMapId)
+        end
     end
  
-    if table.find(FARM_ROTATION, game.PlaceId) then
+    if game.PlaceId == CONFIG.FarmMapId then
         if Limestone.Value >= CONFIG.MaxResource or MistCrystal.Value >= CONFIG.MaxResource or Spiritwood.Value >= CONFIG.MaxResource then
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.SellMapId)
         end
@@ -730,7 +693,7 @@ end)
 -- ==========================================
 task.spawn(function()
     while task.wait(1) do
-        if table.find(FARM_ROTATION, game.PlaceId) then
+        if game.PlaceId == CONFIG.FarmMapId then
             local timeSinceLastAction = os.time() - LastProgressTime
             
             if timeSinceLastAction > 10 then
@@ -779,7 +742,7 @@ end)
 -- Main Farm Loop
 task.spawn(function()
     while task.wait(0.2) do
-        if isPause or not table.find(FARM_ROTATION, game.PlaceId) then task.wait(1) continue end
+        if isPause or game.PlaceId ~= CONFIG.FarmMapId then task.wait(1) continue end
         pcall(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
@@ -803,7 +766,7 @@ task.spawn(function()
                 
                 local startAttack = tick()
                 while nearestNode.Parent and nearestNode.Health.Value > 0 and (tick()-startAttack < 15) do
-                    if isPause or not table.find(FARM_ROTATION, game.PlaceId) then break end
+                    if isPause or game.PlaceId ~= CONFIG.FarmMapId then break end
                     local d = getDragon()
                     if d and d:FindFirstChild("Remotes") then
                         d.Remotes.PlaySoundRemote:FireServer("Breath", "Destructibles", nearestNode)
@@ -2859,41 +2822,34 @@ if hasEnoughCoins() then
     end
 end
 
-local function isFarmMap()
-    return table.find(FARM_ROTATION, game.PlaceId) ~= nil
-end
-
--- BƯỚC 1: Đã ở map farm → chạy farm ngay
-if isFarmMap() then
+-- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay
+if isShinrin() then
 
     runScript1()
     return
 end
 
--- BƯỚC 2: Đang ở Lobby và có resource → chạy sell/farm
+-- BƯỚC 2: Đang ở Lobby VÀ có Resource → Chạy Farm để bán đồ trước
 if currentWorld == "Lobby" and hasResources() then
 
     runScript1()
     return
 end
 
--- BƯỚC 3: Không ở map farm → teleport sang map tiếp theo
-local NEXT_MAP = getNextFarmMap()
+-- BƯỚC 3: Chưa ở Shinrin → Thử tele đến Shinrin
 
-print("[AUTO FARM] TELEPORT TO:", NEXT_MAP)
 
+local SHINRIN_ID = 125804922932357
 pcall(function()
-    game:GetService("ReplicatedStorage")
-        :WaitForChild("Remotes")
-        :WaitForChild("WorldTeleportRemote")
-        :InvokeServer(NEXT_MAP)
+    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(SHINRIN_ID)
 end)
 
--- BƯỚC 4: Chờ load map
+-- BƯỚC 4: Chờ 10 giây
+
 task.wait(10)
 
 -- BƯỚC 5: Kiểm tra kết quả
-if isFarmMap() then
+if isShinrin() then
 
     runScript1()
 else
