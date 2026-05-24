@@ -490,15 +490,7 @@ local function getNextFarmMap()
     return mapId
 end
     -- Cấu hình Anti-Stuck
-    StuckTimeOut = 90, -- (Giây) Nếu sau 90s không có gì thay đổi sẽ reset
- 
-    PatrolPoints = {
-        Vector3.new(-1635.540, 752.665, 296.195),
-        Vector3.new(-2112.585, 262.856, -2675.816),
-        Vector3.new(1129.032, 746.925, -3714.667),
-        Vector3.new(2191.425, 433.441, -26.284),
-        Vector3.new(-492.073, 226.464, -1841.384)
-    },
+    
     
     TargetDrops = {
         "LimestoneResourcesModel", "MistCrystalResourcesModel", "SpiritwoodResourcesModel"
@@ -787,7 +779,7 @@ end)
 -- Main Farm Loop
 task.spawn(function()
     while task.wait(0.2) do
-        if isPause or game.PlaceId ~= CONFIG.FarmMapId then task.wait(1) continue end
+        if isPause or not table.find(FARM_ROTATION, game.PlaceId) then task.wait(1) continue end
         pcall(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
@@ -811,7 +803,7 @@ task.spawn(function()
                 
                 local startAttack = tick()
                 while nearestNode.Parent and nearestNode.Health.Value > 0 and (tick()-startAttack < 15) do
-                    if isPause or game.PlaceId ~= CONFIG.FarmMapId then break end
+                    if isPause or not table.find(FARM_ROTATION, game.PlaceId) then break end
                     local d = getDragon()
                     if d and d:FindFirstChild("Remotes") then
                         d.Remotes.PlaySoundRemote:FireServer("Breath", "Destructibles", nearestNode)
