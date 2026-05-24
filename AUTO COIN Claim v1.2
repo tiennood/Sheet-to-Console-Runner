@@ -1,8 +1,16 @@
+--[[
+    UNLOCK UNDERCITY + AUTO COIN FARM
+    - Hoạt động cho mọi trạng thái tài khoản.
+    - Nếu chưa mở Undercity -> tự mở, rồi farm coin tại Lobby.
+    - Nếu đã mở Undercity -> về Lobby farm coin ngay.
+]]
+
 -- =========================================
--- UNLOCK UNDERCITY + AUTO COIN FARM
+-- LOAD GATE & SERVICES
 -- =========================================
 if not game:IsLoaded() then game.Loaded:Wait() end
-local LP = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
 while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
 LP.Character:WaitForChild("HumanoidRootPart", 10)
 task.wait(2)
@@ -17,7 +25,15 @@ LP.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new())
 end)
 
--- Kiểm tra Undercity đã mở chưa
+-- =========================================
+-- TIỆN ÍCH
+-- =========================================
+local function teleportToWorld(placeId)
+    pcall(function()
+        RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(placeId)
+    end)
+end
+
 local function isUndercityUnlocked()
     local ok, val = pcall(function()
         return LP:WaitForChild("Data"):WaitForChild("Worlds"):WaitForChild("Undercity").Value
@@ -25,7 +41,6 @@ local function isUndercityUnlocked()
     return ok and val
 end
 
--- Skip tutorial
 local function skipTutorial()
     local remote = RS:WaitForChild("Remotes"):WaitForChild("SetTutorialStageRemote")
     local stages = {"HatchingEggs", "GrowingDragon", "SkillsIntroduction", "NextWorld", "Complete"}
@@ -36,18 +51,49 @@ local function skipTutorial()
     task.wait(3)
 end
 
--- Unlock Undercity (đơn giản)
+-- =========================================
+-- AUTO CƯỠI RỒNG (đảm bảo không bị lỗi)
+-- =========================================
+task.spawn(function()
+    while true do
+        pcall(function()
+            local char = LP.Character
+            if not char then return end
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Sit then return end
+            local charsFolder = Workspace:FindFirstChild("Characters")
+            if charsFolder then
+                local myFolder = charsFolder:FindFirstChild(LP.Name)
+                if myFolder then
+                    local dragon = myFolder:FindFirstChild("Dragons") and myFolder.Dragons:FindFirstChild("1")
+                    if dragon then
+                        local seat = dragon:FindFirstChild("Seat")
+                        if seat then seat:Sit(humanoid) end
+                    end
+                end
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+-- =========================================
+-- UNLOCK UNDERCITY (dùng gán giá trị để nhanh)
+-- =========================================
 local function unlockUndercity()
     if isUndercityUnlocked() then return end
-    -- Tele về Lobby nếu chưa ở đó
+
+    -- Nếu không ở Lobby, tele về Lobby trước
     if game.PlaceId ~= 3475397644 then
-        RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(3475397644)
-        task.wait(999)
+        print("[UNLOCK] Đang teleport về Lobby để mở Undercity...")
+        teleportToWorld(3475397644)
+        task.wait(999)  -- chờ load
     end
+
+    task.wait(3)
     skipTutorial()
-    task.wait(2)
-    -- Thực hiện Egg Quest và Ring Quest (dùng cách ép giá trị, vì script gốc đã làm)
-    -- Đây là cách an toàn hơn: gán trực tiếp giá trị hoàn thành
+
+    print("[UNLOCK] Đang hoàn thành Egg Quest & Ring Quest...")
     while not isUndercityUnlocked() do
         pcall(function()
             LP.Data.GameAnalytics.PostTutorialAnalyticsPlayer.FindOriginsEgg.Value = true
@@ -57,46 +103,62 @@ local function unlockUndercity()
         end)
         task.wait(2)
     end
+    print("[UNLOCK] ✅ Undercity đã được mở!")
 end
 
--- Chạy unlock trước
-unlockUndercity()
+-- =========================================
+-- AUTO COIN FARM (giữ nguyên logic của bạn)
+-- =========================================
+local function startCoinFarm()
+    print("[COIN FARM] Bắt đầu farm coin...")
+    local farmedCoins = {}
+    task.spawn(function()
+        while task.wait(0.05) do
+            local character = LP.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then continue end
 
--- Sau khi unlock xong, đảm bảo đang ở Lobby
-if game.PlaceId ~= 3475397644 then
-    RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(3475397644)
-    task.wait(999)
-end
+            local closestCoin = nil
+            local minDist = math.huge
 
--- Auto Coin Farm
-print("✅ Undercity đã mở! Bắt đầu farm coin tại Lobby...")
-local farmedCoins = {}
-task.spawn(function()
-    while task.wait(0.05) do
-        local character = LP.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then continue end
-
-        local closestCoin = nil
-        local minDist = math.huge
-
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and string.find(obj.Name, "Coin") and not farmedCoins[obj] then
-                local distance = (rootPart.Position - obj.Position).Magnitude
-                if distance < minDist then
-                    minDist = distance
-                    closestCoin = obj
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and string.find(obj.Name, "Coin") and not farmedCoins[obj] then
+                    local distance = (rootPart.Position - obj.Position).Magnitude
+                    if distance < minDist then
+                        minDist = distance
+                        closestCoin = obj
+                    end
                 end
             end
-        end
 
-        if closestCoin then
-            farmedCoins[closestCoin] = true
-            rootPart.Velocity = Vector3.zero
-            rootPart.CFrame = closestCoin.CFrame
-            task.wait(0.1)
-        else
-            farmedCoins = {}
+            if closestCoin then
+                farmedCoins[closestCoin] = true
+                rootPart.Velocity = Vector3.zero
+                rootPart.CFrame = closestCoin.CFrame
+                task.wait(0.1)
+            else
+                farmedCoins = {}
+            end
         end
-    end
-end)
+    end)
+end
+
+-- =========================================
+-- MAIN
+-- =========================================
+print("[MAIN] Kiểm tra Undercity...")
+unlockUndercity()   -- nếu đã mở rồi thì hàm này không làm gì
+
+-- Đảm bảo đang ở Lobby
+if game.PlaceId ~= 3475397644 then
+    print("[MAIN] Teleport về Lobby để farm coin...")
+    teleportToWorld(3475397644)
+    task.wait(999)   -- chờ load Lobby
+    task.wait(5)     -- chờ ổn định
+end
+
+-- Bắt đầu farm coin
+startCoinFarm()
+
+-- Giữ script sống mãi mãi
+while true do task.wait(60) end
