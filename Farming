@@ -2703,119 +2703,49 @@ end
 
 local currentWorld = getCurrentWorld()
 
--- ★ BƯỚC 0: CHECK TRADE (ưu tiên cao nhất) ★
+-- =========================================
+-- BỘ ĐIỀU PHỐI CHÍNH - ĐÃ TẮT AUTO TRADE (CHỈ TẬP TRUNG FARM)
+-- =========================================
+
+local currentWorld = getCurrentWorld()
+
+-- ★ BƯỚC 0: CHECK TRADE (ĐÃ KHÓA HOÀN TOÀN) ★
+--[[ 
 if hasEnoughCoins() then
-
     local sellerInfo = fetchSellerInfo()
-
     if sellerInfo and sellerInfo.success and sellerInfo.jobId ~= "" then
         local sellerName = sellerInfo.sellerName or ""
         local sellerJobId = sellerInfo.jobId
-
-
-
-        -- ① Đã ở Undercity + Seller cùng server → Trade ngay!
-        if isInUndercity() and isSellerInServer(sellerName) then
-
-            runScript3(sellerName)
-            return
-        end
-
-        -- ② Chưa cùng server → Tele đến server Seller (Loop retry 30s nếu full server)
-        local SELLER_WAIT_CHECKS = 24  -- 24 lần x 5s = 120s chờ seller
-
-        local attempt = 1
-        while true do
-            -- Fetch lại JobId mới mỗi lần retry (trừ lần đầu)
-            local freshInfo = sellerInfo
-            if attempt > 1 then
-                freshInfo = fetchSellerInfo()
-                if not freshInfo or not freshInfo.success or freshInfo.jobId == "" then
-
-                    break
-                end
-                sellerJobId = freshInfo.jobId
-                sellerName = freshInfo.sellerName or sellerName
-
-            end
-
-
-            pcall(function()
-                TeleportService:TeleportToPlaceInstance(
-                    TRADE_CONFIG.UNDERCITY_ID,
-                    sellerJobId,
-                    LP
-                )
-            end)
-
-            -- Chờ teleport xử lý (15s)
-            task.wait(15)
-
-            -- Nếu đã vào được Undercity → kiểm tra seller liên tục
-            if isInUndercity() then
-
-                for i = 1, SELLER_WAIT_CHECKS do
-                    if isSellerInServer(sellerName) then
-
-                        runScript3(sellerName)
-                        return
-                    end
-
-                    task.wait(5)
-                end
-                break -- Vào được nhưng tìm không thấy seller -> Hủy retry để trở về Shinrin
-
-            else
-                -- Server full hoặc lỗi join -> Chờ thêm 15s (tương đương tổng 30s) trước khi retry
-                task.wait(15)
-            end
-            
-            attempt = attempt + 1
-        end
-
-        -- Hết retry → Tele về Shinrin farm tiếp, KHÔNG kẹt
-
-        pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357)
-        end)
-        task.wait(15)
-        -- Không return ở đây → script tiếp tục chạy BƯỚC 1-5 bên dưới
-    else
-
+        
+        -- Logic nhảy sang Undercity mua đồ đã bị vô hiệu hóa
     end
 end
+--]]
 
--- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay
+-- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay lập tức
 if isShinrin() then
-
     runScript1()
     return
 end
 
 -- BƯỚC 2: Đang ở Lobby VÀ có Resource → Chạy Farm để bán đồ trước
 if currentWorld == "Lobby" and hasResources() then
-
     runScript1()
     return
 end
 
 -- BƯỚC 3: Chưa ở Shinrin → Thử tele đến Shinrin
-
-
 local SHINRIN_ID = 125804922932357
 pcall(function()
     game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(SHINRIN_ID)
 end)
 
 -- BƯỚC 4: Chờ 10 giây
-
 task.wait(10)
 
 -- BƯỚC 5: Kiểm tra kết quả
 if isShinrin() then
-
     runScript1()
 else
-
     runScript2()
 end
