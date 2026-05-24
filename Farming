@@ -2859,34 +2859,41 @@ if hasEnoughCoins() then
     end
 end
 
--- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay
-if isShinrin() then
+local function isFarmMap()
+    return table.find(FARM_ROTATION, game.PlaceId) ~= nil
+end
+
+-- BƯỚC 1: Đã ở map farm → chạy farm ngay
+if isFarmMap() then
 
     runScript1()
     return
 end
 
--- BƯỚC 2: Đang ở Lobby VÀ có Resource → Chạy Farm để bán đồ trước
+-- BƯỚC 2: Đang ở Lobby và có resource → chạy sell/farm
 if currentWorld == "Lobby" and hasResources() then
 
     runScript1()
     return
 end
 
--- BƯỚC 3: Chưa ở Shinrin → Thử tele đến Shinrin
+-- BƯỚC 3: Không ở map farm → teleport sang map tiếp theo
+local NEXT_MAP = getNextFarmMap()
 
+print("[AUTO FARM] TELEPORT TO:", NEXT_MAP)
 
-local SHINRIN_ID = 125804922932357
 pcall(function()
-    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(SHINRIN_ID)
+    game:GetService("ReplicatedStorage")
+        :WaitForChild("Remotes")
+        :WaitForChild("WorldTeleportRemote")
+        :InvokeServer(NEXT_MAP)
 end)
 
--- BƯỚC 4: Chờ 10 giây
-
+-- BƯỚC 4: Chờ load map
 task.wait(10)
 
 -- BƯỚC 5: Kiểm tra kết quả
-if isShinrin() then
+if isFarmMap() then
 
     runScript1()
 else
