@@ -374,10 +374,26 @@ end
 -- =========================================
 -- GOOGLE SHEETS: FETCH SELLER JOBID
 -- =========================================
+local function fetchSellerInfo()
+    local ok, result = pcall(function()
+        if not httpRequest then return nil end
+        local response = httpRequest({
+            Url = TRADE_CONFIG.SHEETS_URL .. "?action=getJobId",
+            Method = "GET"
+        })
+        if response and response.Body then
+            return HttpService:JSONDecode(response.Body)
+        end
+        return nil
+    end)
+    return ok and result or nil
+end
 
-
+-- =========================================
+-- SOURCE 1: SCRIPT FARM (1.txt)
+-- =========================================
 local function runScript1()
-    ---///--- BẮT ĐẦU PASTE 1.txt TỪ ĐÂY (ĐÃ LÀM CHẬM CHỐNG BAN) ---///---
+    ---///--- BẮT ĐẦU PASTE 1.txt TỪ ĐÂY ---///---
 
 --[[ 
     ULTIMATE FARMING SCRIPT (V4.9 - ANTI LAG, STUCK & AUTO MOUNT)
@@ -389,14 +405,17 @@ local function runScript1()
 --        1. SMART LOAD SYSTEM
 -- ==========================================
 wait(15);
+ 
 if not game:IsLoaded() then game.Loaded:Wait() end
  
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
  
+ 
 local Data = LocalPlayer:WaitForChild("Data", 9e9)
 local Resources = Data:WaitForChild("Resources", 9e9)
+ 
  
 -- ==========================================
 --                SERVICES
@@ -415,21 +434,63 @@ local VirtualUser = game:GetService("VirtualUser")
 LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
+ 
 end)
  
 -- ==========================================
 --             CẤU HÌNH (CONFIG)
 -- ==========================================
 local CONFIG = {
-    FarmMapId = 125804922932357, 
-    SellMapId = 3475397644,      
-    MaxResource = 1000,          
-    TweenSpeed = 150, 
-    FarmHeight = -25,             
+    SellMapId = 3475397644,
+    MaxResource = 1000,
+    TweenSpeed = 0,
+    FarmHeight = -25,
     ResourceSearchRange = 10000,
-    
+
+    StuckTimeOut = 90,
+
+    PatrolPoints = {
+        Vector3.new(-1635.540, 752.665, 296.195),
+        Vector3.new(-2112.585, 262.856, -2675.816),
+        Vector3.new(1129.032, 746.925, -3714.667),
+        Vector3.new(2191.425, 433.441, -26.284),
+        Vector3.new(-492.073, 226.464, -1841.384)
+    },
+
+    TargetDrops = {
+        "LimestoneResourcesModel",
+        "MistCrystalResourcesModel",
+        "SpiritwoodResourcesModel"
+    }
+}
+
+local FARM_ROTATION = {
+    3475419198, -- Grassland
+    3475422608, -- Jungle
+    3487210751, -- Volcano
+    3623549100, -- Tundra
+    3737848045, -- Ocean
+    3752680052, -- Desert
+    4174118306, -- Fantasy
+    4728805070, -- Toxic
+    4869039553, -- Prehistoric
+}
+
+local currentFarmIndex = 1
+
+local function getNextFarmMap()
+    local mapId = FARM_ROTATION[currentFarmIndex]
+
+    currentFarmIndex += 1
+
+    if currentFarmIndex > #FARM_ROTATION then
+        currentFarmIndex = 1
+    end
+
+    return mapId
+end
     -- Cấu hình Anti-Stuck
-    StuckTimeOut = 90, 
+    StuckTimeOut = 90, -- (Giây) Nếu sau 90s không có gì thay đổi sẽ reset
  
     PatrolPoints = {
         Vector3.new(-1635.540, 752.665, 296.195),
@@ -471,6 +532,7 @@ local function mainProgressLogic()
     local Meat = res:FindFirstChild("Meat")
     local Bacon = res:FindFirstChild("Bacon")
  
+    -- [UPDATE ANTI-STUCK]
     if Limestone.Value > PreviousData.Limestone or MistCrystal.Value > PreviousData.MistCrystal or Spiritwood.Value > PreviousData.Spiritwood then
         LastProgressTime = os.time() 
         PreviousData.Limestone = Limestone.Value
@@ -493,16 +555,20 @@ local function mainProgressLogic()
             if item.obj and item.obj.Value >= 1 then
                 local args = {{ ItemName = item.name, Amount = item.obj.Value }}
                 remote:FireServer(unpack(args))
-                task.wait(2) -- Tăng thời gian chờ khi bán đồ lên 2 giây cho an toàn
+                task.wait(1)
             end
         end
  
-        if Limestone.Value < 100 then
-            ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.FarmMapId)
-        end
+       if Limestone.Value < 100 then
+    local nextMap = getNextFarmMap()
+
+    print("[AUTO FARM] NEXT MAP:", nextMap)
+
+    ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(nextMap)
+end
     end
  
-    if game.PlaceId == CONFIG.FarmMapId then
+    if table.find(FARM_ROTATION, game.PlaceId) then
         if Limestone.Value >= CONFIG.MaxResource or MistCrystal.Value >= CONFIG.MaxResource or Spiritwood.Value >= CONFIG.MaxResource then
             ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.SellMapId)
         end
@@ -517,14 +583,14 @@ local ScreenGui = Instance.new("ScreenGui", CoreGui)
 ScreenGui.Name = "MainFarmUI"
  
 local Main = Instance.new("Frame", ScreenGui)
-Main.Size = UDim2.new(0, 250, 0, 340)
+Main.Size = UDim2.new(0, 250, 0, 340) -- Đã tăng chiều cao để chứa nút Render
 Main.Position = UDim2.new(0.02, 0, 0.3, 0)
 Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 Main.Active = true Main.Draggable = true
 Instance.new("UICorner", Main)
  
 local Title = Instance.new("TextLabel", Main)
-Title.Text = "FARM V4.9 (SAFE MODE)"
+Title.Text = "FARM V4.9 (NO-LAG)"
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.TextColor3 = Color3.fromRGB(255, 215, 0)
 Title.BackgroundTransparency = 1 Title.Font = Enum.Font.GothamBold
@@ -567,6 +633,7 @@ local LimeL = CreateRow("Limestone")
 local CrystalL = CreateRow("Crystal")
 local WoodL = CreateRow("Wood")
  
+-- === Nút Tắt/Bật 3D Render ===
 local RenderBtn = Instance.new("TextButton", Main)
 RenderBtn.Name = "ToggleRender"
 RenderBtn.Size = UDim2.new(1, -20, 0, 30)
@@ -592,15 +659,12 @@ end)
 -- ==========================================
 --         HÀM HỖ TRỢ CORE & TỰ ĐỘNG
 -- ==========================================
-local function tweenTo(targetPart, targetCFrame, speed)
-    if not targetPart then return end
-    speed = speed > 0 and speed or 150
-    local distance = (targetPart.Position - targetCFrame.Position).Magnitude
-    local tweenTime = distance / speed
-    local tweenInfo = TweenInfo.new(tweenTime, Enum.EasingStyle.Linear)
-    local tween = TweenService:Create(targetPart, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
+local function getDragon()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local folder = char:FindFirstChild("Dragons")
+    if not folder then return end
+    for _, d in pairs(folder:GetChildren()) do if tonumber(d.Name) then return d end end
 end
  
 local function teleportDrops()
@@ -616,6 +680,7 @@ local function teleportDrops()
     end
 end
  
+-- Vòng lặp xóa người chơi khác & rác (Ngầm)
 task.spawn(function()
     while true do
         pcall(function()
@@ -634,6 +699,7 @@ task.spawn(function()
     end
 end)
  
+-- Noclip & Immortal
 RunService.Stepped:Connect(function()
     pcall(function()
         if LocalPlayer.Character then
@@ -647,6 +713,9 @@ RunService.Stepped:Connect(function()
     end)
 end)
  
+-- ==========================================
+--        AUTO-SIT TRÊN RỒNG (LOOP MỖI 1S)
+-- ==========================================
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -654,6 +723,8 @@ task.spawn(function()
             if char and char:FindFirstChild("Humanoid") then
                 local humanoid = char.Humanoid
                 local dragonSeat = Workspace.Characters[LocalPlayer.Name].Dragons["1"]:FindFirstChild("Seat")
+                
+                -- Chỉ gọi hàm Sit nếu tìm thấy rồng và người chơi chưa ngồi
                 if dragonSeat and humanoid.SeatPart ~= dragonSeat then
                     dragonSeat:Sit(humanoid)
                 end
@@ -662,10 +733,14 @@ task.spawn(function()
     end
 end)
  
+-- ==========================================
+--        WATCHDOG (CHÓ CANH CỬA ANTI-STUCK)
+-- ==========================================
 task.spawn(function()
     while task.wait(1) do
-        if game.PlaceId == CONFIG.FarmMapId then
+        if table.find(FARM_ROTATION, game.PlaceId) then
             local timeSinceLastAction = os.time() - LastProgressTime
+            
             if timeSinceLastAction > 10 then
                 StatusLabel.Text = "Idle for: " .. tostring(timeSinceLastAction) .. "s"
                 StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
@@ -673,7 +748,9 @@ task.spawn(function()
                 StatusLabel.Text = "Status: Farming Good"
                 StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
             end
+ 
             if timeSinceLastAction >= CONFIG.StuckTimeOut then
+ 
                 StatusLabel.Text = "STUCK! TELEPORTING..."
                 ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(CONFIG.SellMapId)
                 task.wait(10)
@@ -682,9 +759,13 @@ task.spawn(function()
     end
 end)
  
+-- ==========================================
+--            CÁC VÒNG LẶP CHÍNH
+-- ==========================================
+ 
 -- UI & Stats Logic
 task.spawn(function()
-    while task.wait(2.5) do -- [CHỈNH SỬA] Tăng lên 2.5s để giảm tần suất quét và hút đồ liên tục
+    while task.wait(0.5) do
         pcall(function()
             local diff = os.time() - startTime
             TimeLabel.Text = string.format("Time: %02d:%02d:%02d", diff/3600, (diff/60)%60, diff%60)
@@ -705,7 +786,7 @@ end)
  
 -- Main Farm Loop
 task.spawn(function()
-    while task.wait(1.5) do -- [CHỈNH SỬA] Tăng lên 1.5s để nhân vật đứng nghỉ một chút sau khi đập xong, không giật tele ngay lập tức
+    while task.wait(0.2) do
         if isPause or game.PlaceId ~= CONFIG.FarmMapId then task.wait(1) continue end
         pcall(function()
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -724,14 +805,10 @@ task.spawn(function()
  
             if nearestNode then
                 local dragon = getDragon()
-                  if dragon and dragon:FindFirstChild("HumanoidRootPart") then
-                    local targetCFrame = CFrame.new(nearestNode.Position.X, nearestNode.Position.Y + CONFIG.FarmHeight, nearestNode.Position.Z)
-                    tweenTo(dragon.HumanoidRootPart, targetCFrame, CONFIG.TweenSpeed)
+                if dragon and dragon:FindFirstChild("HumanoidRootPart") then
+                    dragon.HumanoidRootPart.CFrame = CFrame.new(nearestNode.Position.X, nearestNode.Position.Y + CONFIG.FarmHeight, nearestNode.Position.Z)
                 end
                 
-                -- Độ trễ nhỏ sau khi tele tới bãi quặng rồi mới bắt đầu khạc lửa (nhìn tự nhiên hơn)
-                task.wait(0.3) 
-               
                 local startAttack = tick()
                 while nearestNode.Parent and nearestNode.Health.Value > 0 and (tick()-startAttack < 15) do
                     if isPause or game.PlaceId ~= CONFIG.FarmMapId then break end
@@ -741,7 +818,7 @@ task.spawn(function()
                         d.Remotes.PlaySoundRemote:FireServer("Bite", "Destructibles", nearestNode)
                     end
                     teleportDrops()
-                    task.wait(0.6) -- [CHỈNH SỬA] Tăng từ 0.15s lên 0.6s để giảm tốc độ spam Remote cắn/khạc lửa, né hệ thống lọc packet của game
+                    task.wait(0.15)
                 end
                 
                 LastProgressTime = os.time()
@@ -750,16 +827,16 @@ task.spawn(function()
                 local target = CONFIG.PatrolPoints[currentPatrolIndex]
                 local d = getDragon()
                 if d and d:FindFirstChild("HumanoidRootPart") then
-                    -- Thay vì biến mất, nhân vật sẽ bay mượt tới điểm target với tốc độ CONFIG.TweenSpeed
-                    tweenTo(d.HumanoidRootPart, CFrame.new(target), CONFIG.TweenSpeed)
+                    d.HumanoidRootPart.CFrame = CFrame.new(target)
                 end
                 
-                task.wait(3.0) -- Tăng thời gian tuần tra chờ bãi quặng hồi lên 3 giây
+                task.wait(1.5)
                 currentPatrolIndex = (currentPatrolIndex % #CONFIG.PatrolPoints) + 1
             end
         end)
     end
 end)
+
 
     ---///--- KẾT THÚC PASTE 1.txt Ở ĐÂY ---///---
 end
@@ -977,8 +1054,8 @@ task.spawn(function()
             expRemote:FireServer(dragon1Data, "Bored")
         end)
  
-        -- Tốc độ spam (0.8 giây/lần - tối ưu CPU)
-        task.wait(0.8)
+        -- Tốc độ spam (0.3 giây/lần - tối ưu CPU)
+        task.wait(0.3)
     end
 end)
  
@@ -2078,7 +2155,7 @@ local function autoChest(mapName)
             else
                 if #CurrentCoordinates > 0 then
                     local targetPos = CurrentCoordinates[CurrentCoordIndex]
-                    teleportTo(CFrame.new(targetPos))
+                    hrp.CFrame = CFrame.new(targetPos)
  
                     CurrentCoordIndex = CurrentCoordIndex + 1
                     if CurrentCoordIndex > #CurrentCoordinates then
@@ -2708,49 +2785,119 @@ end
 
 local currentWorld = getCurrentWorld()
 
--- =========================================
--- BỘ ĐIỀU PHỐI CHÍNH - ĐÃ TẮT AUTO TRADE (CHỈ TẬP TRUNG FARM)
--- =========================================
-
-local currentWorld = getCurrentWorld()
-
--- ★ BƯỚC 0: CHECK TRADE (ĐÃ KHÓA HOÀN TOÀN) ★
---[[ 
+-- ★ BƯỚC 0: CHECK TRADE (ưu tiên cao nhất) ★
 if hasEnoughCoins() then
+
     local sellerInfo = fetchSellerInfo()
+
     if sellerInfo and sellerInfo.success and sellerInfo.jobId ~= "" then
         local sellerName = sellerInfo.sellerName or ""
         local sellerJobId = sellerInfo.jobId
-        
-        -- Logic nhảy sang Undercity mua đồ đã bị vô hiệu hóa
+
+
+
+        -- ① Đã ở Undercity + Seller cùng server → Trade ngay!
+        if isInUndercity() and isSellerInServer(sellerName) then
+
+            runScript3(sellerName)
+            return
+        end
+
+        -- ② Chưa cùng server → Tele đến server Seller (Loop retry 30s nếu full server)
+        local SELLER_WAIT_CHECKS = 24  -- 24 lần x 5s = 120s chờ seller
+
+        local attempt = 1
+        while true do
+            -- Fetch lại JobId mới mỗi lần retry (trừ lần đầu)
+            local freshInfo = sellerInfo
+            if attempt > 1 then
+                freshInfo = fetchSellerInfo()
+                if not freshInfo or not freshInfo.success or freshInfo.jobId == "" then
+
+                    break
+                end
+                sellerJobId = freshInfo.jobId
+                sellerName = freshInfo.sellerName or sellerName
+
+            end
+
+
+            pcall(function()
+                TeleportService:TeleportToPlaceInstance(
+                    TRADE_CONFIG.UNDERCITY_ID,
+                    sellerJobId,
+                    LP
+                )
+            end)
+
+            -- Chờ teleport xử lý (15s)
+            task.wait(15)
+
+            -- Nếu đã vào được Undercity → kiểm tra seller liên tục
+            if isInUndercity() then
+
+                for i = 1, SELLER_WAIT_CHECKS do
+                    if isSellerInServer(sellerName) then
+
+                        runScript3(sellerName)
+                        return
+                    end
+
+                    task.wait(5)
+                end
+                break -- Vào được nhưng tìm không thấy seller -> Hủy retry để trở về Shinrin
+
+            else
+                -- Server full hoặc lỗi join -> Chờ thêm 15s (tương đương tổng 30s) trước khi retry
+                task.wait(15)
+            end
+            
+            attempt = attempt + 1
+        end
+
+        -- Hết retry → Tele về Shinrin farm tiếp, KHÔNG kẹt
+
+        pcall(function()
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357)
+        end)
+        task.wait(15)
+        -- Không return ở đây → script tiếp tục chạy BƯỚC 1-5 bên dưới
+    else
+
     end
 end
---]]
 
--- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay lập tức
+-- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay
 if isShinrin() then
+
     runScript1()
     return
 end
 
 -- BƯỚC 2: Đang ở Lobby VÀ có Resource → Chạy Farm để bán đồ trước
 if currentWorld == "Lobby" and hasResources() then
+
     runScript1()
     return
 end
 
 -- BƯỚC 3: Chưa ở Shinrin → Thử tele đến Shinrin
+
+
 local SHINRIN_ID = 125804922932357
 pcall(function()
     game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(SHINRIN_ID)
 end)
 
 -- BƯỚC 4: Chờ 10 giây
+
 task.wait(10)
 
 -- BƯỚC 5: Kiểm tra kết quả
 if isShinrin() then
+
     runScript1()
 else
+
     runScript2()
 end
