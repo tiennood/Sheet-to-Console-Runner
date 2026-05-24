@@ -472,38 +472,46 @@ local function chestFarmingMode()
         local hrp = farmer and farmer:FindFirstChild("HumanoidRootPart")
         if not hrp then task.wait(1) continue end
         for _, targetPos in ipairs(ChestCoordinates[placeId]) do
-            hrp.CFrame = CFrame.new(targetPos)
-            task.wait(0.5)
-            local nodesFolder = Workspace:FindFirstChild("Interactions") and Workspace.Interactions:FindFirstChild("Nodes") and Workspace.Interactions.Nodes:FindFirstChild("Treasure")
-            if nodesFolder then
-                for _, node in pairs(nodesFolder:GetChildren()) do
-                    if not blacklisted[node] and node:FindFirstChild("TouchInterest") == nil then
-                        local pos = node:IsA("Model") and node:GetModelCFrame().Position or node.Position
-                        if (hrp.Position - pos).Magnitude < 100 then
-                            local targetCFrame = node:IsA("Model") and node:GetModelCFrame() or node.CFrame
-                            hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
-                            local popRemote = RS:WaitForChild("Remotes"):WaitForChild("PoppedDiscoverIndicatorRemote")
-                            local chestFolder = LP.Data.TreasureChests:FindFirstChild(mapName)
-                            if chestFolder then
-                                local chestData = chestFolder:FindFirstChild(node.Name)
-                                if chestData then pcall(function() popRemote:FireServer("TreasureChest", chestData) end) end
-                            end
-                            local OpenChestRemote = LP:FindFirstChild("Remotes") and LP.Remotes:FindFirstChild("OpenChestRemote")
-                            local startAtk = tick()
-                            while node.Parent and (tick() - startAtk < 3) do
-                                hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
-                                if OpenChestRemote then pcall(function() for i = 1, 5 do OpenChestRemote:InvokeServer(i, false) end end) end
-                                if farmer:FindFirstChild("Remotes") and farmer.Remotes:FindFirstChild("PlaySoundRemote") then
-                                    pcall(function() farmer.Remotes.PlaySoundRemote:FireServer("Bite", "Destructibles", node) end)
-                                end
-                                task.wait(0.1)
-                            end
-                            blacklisted[node] = true
-                        end
+    hrp.CFrame = CFrame.new(targetPos)
+    task.wait(0.5)
+
+    local nodesFolder = Workspace:FindFirstChild("Interactions") and 
+                       Workspace.Interactions:FindFirstChild("Nodes") and 
+                       Workspace.Interactions.Nodes:FindFirstChild("Treasure")
+    if nodesFolder then
+        for _, node in pairs(nodesFolder:GetChildren()) do
+            if not blacklisted[node] and node:FindFirstChild("TouchInterest") == nil then
+                local pos = node:IsA("Model") and node:GetModelCFrame().Position or node.Position
+                if (hrp.Position - pos).Magnitude < 100 then
+                    local targetCFrame = node:IsA("Model") and node:GetModelCFrame() or node.CFrame
+                    hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
+                    
+                    -- ★ THÊM DÒNG CHỜ 30 GIÂY TRƯỚC KHI MỞ RƯƠNG ★
+                    print("[CHEST] Phát hiện rương, chờ 30 giây trước khi mở...")
+                    task.wait(30)
+
+                    local popRemote = RS:WaitForChild("Remotes"):WaitForChild("PoppedDiscoverIndicatorRemote")
+                    local chestFolder = LP.Data.TreasureChests:FindFirstChild(mapName)
+                    if chestFolder then
+                        local chestData = chestFolder:FindFirstChild(node.Name)
+                        if chestData then pcall(function() popRemote:FireServer("TreasureChest", chestData) end) end
                     end
+                    local OpenChestRemote = LP:FindFirstChild("Remotes") and LP.Remotes:FindFirstChild("OpenChestRemote")
+                    local startAtk = tick()
+                    while node.Parent and (tick() - startAtk < 3) do
+                        hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
+                        if OpenChestRemote then pcall(function() for i = 1, 5 do OpenChestRemote:InvokeServer(i, false) end end) end
+                        if farmer:FindFirstChild("Remotes") and farmer.Remotes:FindFirstChild("PlaySoundRemote") then
+                            pcall(function() farmer.Remotes.PlaySoundRemote:FireServer("Bite", "Destructibles", node) end)
+                        end
+                        task.wait(0.1)
+                    end
+                    blacklisted[node] = true
                 end
             end
         end
+    end
+end
         local currentIndex = table.find(ChestFarmOrder, placeId)
         local nextPlaceId = currentIndex and currentIndex < #ChestFarmOrder and ChestFarmOrder[currentIndex + 1] or ChestFarmOrder[1]
         teleportToWorld(nextPlaceId)
