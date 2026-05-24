@@ -185,10 +185,12 @@ local function chestFarmingMode()
         local placeId = game.PlaceId
         -- Nếu đang ở map không có trong danh sách farm rương (ví dụ lobby, undercity) thì đưa về Prehistoric
         if not ChestCoordinates[placeId] then
-            teleportToWorld(ChestFarmOrder[1])
-            task.wait(999)
-            return
-        end
+    teleportToWorld(ChestFarmOrder[1])
+    task.wait(999)
+    -- Không return, vòng lặp while true sẽ chạy lại từ đầu sau khi load map mới
+else
+    -- ... (code farm rương)
+end
 
         local mapName = MapData[placeId]
         local blacklistedChests = {}
@@ -286,69 +288,49 @@ end
 -- =========================================
 -- HÀM KIỂM TRA ALL MAPS COMPLETED
 -- =========================================
-local MapOrderForCheck = {
-    "Grassland", "Jungle", "Volcano", "Tundra", "Ocean",
-    "Desert", "Fantasy", "Toxic", "Prehistoric"
-}
+local currentWorld = getCurrentWorld()
 
-local function isMapFullyCompleted(mapName)
-    local ok, count = pcall(function()
-        return LP.Data.WorldMissions[mapName].TotalCompleted.Value
-    end)
-    if not ok then return false end
-    if mapName == "Grassland" then return count >= 4
-    else return count >= 6 end
-end
-
-local function allMapsCompleted()
-    for _, mapName in ipairs(MapOrderForCheck) do
-        if not isMapFullyCompleted(mapName) then
-            return false
-        end
-    end
-    return true
-end
-
--- ★★★ THÊM KHỐI NÀY VÀO ĐẦU BỘ ĐIỀU PHỐI ★★★
+-- ★ KIỂM TRA ĐÃ MỞ HẾT MAP CHƯA ★
 if allMapsCompleted() then
-    -- Đã mở hết map => chạy Chest Farm vô hạn, bỏ qua mọi thứ khác
-    local function chestFarmingMode()
-        -- Dán toàn bộ code của chestFarmingMode ở đây
-        -- (tôi sẽ cung cấp bản đầy đủ bên dưới)
+    -- Nếu đã mở hết mọi map → bắt đầu chest farm vô hạn, bỏ qua mọi thứ khác
+    if game.PlaceId ~= 4869039553 then
+        teleportToWorld(4869039553)  -- về Prehistoric để bắt đầu lộ trình chuẩn
+        task.wait(999)
+    else
+        chestFarmingMode()  -- gọi hàm toàn cục đã định nghĩa ở trên
     end
-    chestFarmingMode()
     return
 end
 
--- Sau đó mới đến các bước cũ:
-
--- BƯỚC 0: CHECK TRADE (ưu tiên cao nhất) - giữ nguyên
+-- BƯỚC 0: CHECK TRADE (ưu tiên cao nhất) - giữ nguyên từ script gốc
 if hasEnoughCoins() then
     local sellerInfo = fetchSellerInfo()
     if sellerInfo and sellerInfo.success and sellerInfo.jobId ~= "" then
-        -- ... (toàn bộ logic trade cũ) ...
+        -- ... (toàn bộ logic trade cũ của bạn) ...
     end
 end
 
--- BƯỚC 1: Đã ở Shinrin → Farm (giữ nguyên)
+-- BƯỚC 1: Đã ở Shinrin → Chạy Farm ngay
 if isShinrin() then
     runScript1()
     return
 end
 
--- BƯỚC 2: Lobby + có resource → Farm (giữ nguyên)
+-- BƯỚC 2: Đang ở Lobby VÀ có Resource → Chạy Farm để bán đồ trước
 if currentWorld == "Lobby" and hasResources() then
     runScript1()
     return
 end
 
--- BƯỚC 3: Thử tele đến Shinrin (giữ nguyên)
+-- BƯỚC 3: Chưa ở Shinrin → Thử tele đến Shinrin
 pcall(function()
     RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357)
 end)
+
+-- BƯỚC 4: Chờ 10 giây
 task.wait(10)
 
--- BƯỚC 4: Nếu vào được Shinrin thì farm, không thì unlock
+-- BƯỚC 5: Kiểm tra kết quả
 if isShinrin() then
     runScript1()
 else
