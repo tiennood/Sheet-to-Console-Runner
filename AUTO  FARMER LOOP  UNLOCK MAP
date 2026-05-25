@@ -820,35 +820,95 @@ do
             end
         end
 
-        -- AUTO EGG (chỉ chạy nếu chưa unlock all worlds)
+               -- AUTO EGG (có timeout và xử lý treo)
         local function autoEgg(mapName)
-            while SCRIPT_RUNNING do
+            -- Nếu quest egg đã hoàn thành thì không cần làm gì
+            local eggQuestDone = false
+            pcall(function()
+                eggQuestDone = LP.Data.WorldMissions[mapName].Missions.EggQuest.Value == true
+            end)
+            if eggQuestDone then
+                print("[Egg] Quest already done, skip")
+                return
+            end
+
+            local startTime = tick()
+            local globalTimeout = 120 -- 2 phút tối đa cho autoEgg
+            local lastFoundTime = tick()
+            local blacklistedNodes = {}
+
+            while SCRIPT_RUNNING and (tick() - startTime) < globalTimeout do
                 pcall(function()
                     local farmer = getFarmer()
                     local hrp = farmer and farmer:FindFirstChild("HumanoidRootPart")
                     if not hrp then return end
+
                     local interactions = Workspace:FindFirstChild("Interactions")
                     local activeNodes = interactions and interactions:FindFirstChild("Nodes")
                                         and interactions.Nodes:FindFirstChild("Eggs")
                                         and interactions.Nodes.Eggs:FindFirstChild("ActiveNodes")
-                    if not activeNodes then task.wait(1) return end
+                    
+                    if not activeNodes or #activeNodes:GetChildren() == 0 then
+                        print("[Egg] No active nodes found")
+                        task.wait(2)
+                        -- Nếu 30 giây không thấy node nào thì thoát (coi như hết trứng)
+                        if tick() - lastFoundTime > 30 then
+                            print("[Egg] No egg nodes for 30s, exit autoEgg")
+                            break
+                        end
+                        return
+                    end
+
                     local foundEgg = false
                     for _, node in pairs(activeNodes:GetChildren()) do
+                        if blacklistedNodes[node] then continue end
                         local eggModel = node:FindFirstChild("EggModel")
                         local harvested = eggModel and eggModel:FindFirstChild("Harvested")
                         if harvested and harvested.Value == false then
                             foundEgg = true
+                            lastFoundTime = tick()
                             local targetCFrame = node:IsA("Model") and node:GetModelCFrame() or node.CFrame
                             hrp.CFrame = targetCFrame + EGG_OFFSET
                             task.wait(0.3)
-                            harvested.Value = true
-                            task.wait(2)
+                            
+                            -- Thử hái, nếu sau 5s mà harvested vẫn false thì coi như lỗi node
+                            local harvestSuccess = false
+                            local checkStart = tick()
+                            while tick() - checkStart < 5 do
+                                if harvested.Value == true then
+                                    harvestSuccess = true
+                                    break
+                                end
+                                task.wait(0.5)
+                            end
+                            
+                            if harvestSuccess then
+                                print("[Egg] Harvested successfully")
+                                task.wait(2)
+                                -- Thoát khỏi autoEgg sau khi hái được 1 trứng? 
+                                -- Thực tế có thể cần hái nhiều, nhưng 1 lần đủ cho quest
+                                -- Để an toàn, ta break để kiểm tra lại quest status
+                                return
+                            else
+                                print("[Egg] Failed to harvest, blacklist node")
+                                blacklistedNodes[node] = true
+                            end
                         end
                     end
-                    if not foundEgg then task.wait(1) end
+                    
+                    if not foundEgg then
+                        print("[Egg] No harvestable egg found")
+                        task.wait(2)
+                        if tick() - lastFoundTime > 30 then
+                            print("[Egg] No harvestable egg for 30s, exit")
+                            break
+                        end
+                    end
                 end)
-                task.wait(0.2)
+                task.wait(1)
             end
+            
+            print("[Egg] AutoEgg finished (timeout or completed)")
         end
 
         -- AUTO CHEST
