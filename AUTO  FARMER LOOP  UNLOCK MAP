@@ -774,7 +774,44 @@ local function startCoinFarm()
         end
     end)
 end
-
+-- === FARM COIN TẠI LOBBY (HOẶC BẤT KỲ MAP NÀO) ===
+task.spawn(function()
+    -- Tắt auto-sell và auto-tele resource nếu chỉ muốn nhặt coin
+    -- (Giữ nguyên các task hỗ trợ như xóa rác, auto-sit, noclip...)
+    
+    while true do
+        pcall(function()
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            
+            -- Tìm coin gần nhất
+            local closestCoin = nil
+            local minDist = math.huge
+            
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and string.find(obj.Name, "Coin") then
+                    local dist = (hrp.Position - obj.Position).Magnitude
+                    if dist < minDist then
+                        minDist = dist
+                        closestCoin = obj
+                    end
+                end
+            end
+            
+            if closestCoin then
+                -- Tele đến coin
+                hrp.Velocity = Vector3.zero
+                hrp.CFrame = closestCoin.CFrame
+                task.wait(0.1)
+            else
+                -- Không có coin, chờ 1 giây rồi quét lại
+                task.wait(1)
+            end
+        end)
+        task.wait(0.05)
+    end
+end
     ---///--- KẾT THÚC PASTE 1.txt Ở ĐÂY ---///---
 end
 
@@ -2556,7 +2593,8 @@ task.spawn(function()
  
             -- Prehistoric xong 6/6 → tele thẳng Shinrin
             if currentMapName == "Prehistoric" then
-                teleportToWorld(125804922932357)
+                   -- Sau khi unlock hết, về Lobby để nhặt coin
+                        teleportToWorld(3475397644)   -- Lobby PlaceId
                 task.wait(999999)
                 return
             end
