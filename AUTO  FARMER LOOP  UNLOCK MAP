@@ -149,7 +149,7 @@ getgenv().AutoBond = false -- [BẬT/TẮT] Để "false" để tắt Auto Bond 
 
 local TRADE_CONFIG = {
     -- URL Cloudflare Worker (Trạm trung chuyển JobId)
-    SHEETS_URL = "https://dragon-server.vbi89618.workers.dev",
+    SHEETS_URL = "-",
 
     -- Ngưỡng coins tối thiểu để bắt đầu trade
     COIN_THRESHOLD = 150000,
@@ -1253,7 +1253,7 @@ local function notify(title, text)
 end
  
 -- Gửi thông báo qua Discord Webhook
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1436937242869239839/0egWjq5WvRxooBuffFKRiJgg6tiuJSL1TvTqp2qzslP9yKx9CzPciQT27QhwL69T3AI-"
+local WEBHOOK_URL = "-"
  
 local function sendWebhook(message)
     pcall(function()
