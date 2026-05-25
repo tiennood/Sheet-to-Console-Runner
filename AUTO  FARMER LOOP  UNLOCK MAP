@@ -157,7 +157,45 @@ local TRADE_CONFIG = {
     -- Undercity PlaceId
     UNDERCITY_ID = 4601778915,
 }
-
+-- =========================================
+-- AUTO COIN CLAIM (định nghĩa sớm)
+-- =========================================
+local function runAutoCoin()
+    print("[AUTO COIN] Bắt đầu auto coin tại Lobby...")
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    local farmedCoins = {}
+    
+    task.spawn(function()
+        while task.wait(0.05) do
+            local character = LocalPlayer.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not rootPart then continue end
+            
+            local closestCoin = nil
+            local minDist = math.huge
+            
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and string.find(obj.Name, "Coin") and not farmedCoins[obj] then
+                    local distance = (rootPart.Position - obj.Position).Magnitude
+                    if distance < minDist then
+                        minDist = distance
+                        closestCoin = obj
+                    end
+                end
+            end
+            
+            if closestCoin then
+                farmedCoins[closestCoin] = true
+                rootPart.Velocity = Vector3.zero
+                rootPart.CFrame = closestCoin.CFrame
+                task.wait(0.1)
+            else
+                farmedCoins = {}
+            end
+        end
+    end)
+end
 -- =========================================
 -- LOAD GATE (Chờ game load ổn định)
 -- =========================================
@@ -2444,12 +2482,22 @@ task.spawn(function()
     -- CHECK SHINRIN: Nếu đang ở Shinrin → ALL WORLDS UNLOCKED → AFK
     -- ====================================================
     if PlaceId == 125804922932357 then
-        -- Không làm gì nữa, chỉ giữ script sống để anti-AFK + auto bond tiếp tục chạy
-        while SCRIPT_RUNNING do
-            task.wait(60)
-        end
-        return
-    end
+    print("[UNLOCK] ✅ Đã mở khóa tất cả world! Chuẩn bị về Lobby để auto coin...")
+    SCRIPT_RUNNING = false  -- dừng các vòng lặp unlock còn lại
+    
+    -- Teleport về Lobby
+    pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        RS:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(3475397644)
+    end)
+    
+    task.wait(5)
+    
+    -- Chạy auto coin claim
+    runAutoCoin()
+    
+    while true do task.wait(60) end
+end
  
     if not isUndercityUnlocked() then
         -- =============================================
