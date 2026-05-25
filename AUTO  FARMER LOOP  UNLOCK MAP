@@ -1,20 +1,21 @@
 do
     --[[
         =====================================================
-        ULTIMATE MAP STICKY REJOIN (SOURCE-INJECTION READY)
-        - Độc lập 100%, có thể dán vào bất kỳ script nào.
+        ULTIMATE MAP STICKY REJOIN + AUTO WORLD ROTATION
         - Tự động đếm 9 phút và rejoin nếu kẹt map.
-        - Kèm UI Watchdog mini.
+        - Mỗi map farm tối đa 9 phút rồi tele sang map khác.
+        - Auto egg chỉ chạy khi chưa unlock all worlds.
         =====================================================
     ]]
 
     -- =========================================
     -- CONFIG & SERVICES
     -- =========================================
-    local STICKY_TIMEOUT = 540 -- 540 giây (9 phút) cho các map thường
-    local SHINRIN_TIMEOUT = 3600 -- 3600 giây (60 phút) cho map Shinrin (tùy chỉnh tại đây)
-    local LOBBY_TIMEOUT = 300 -- 300 giây (5 phút) cho map Lobby
-    local UNDERCITY_TIMEOUT = 300 -- 300 giây (5 phút) cho chợ Undercity
+    local STICKY_TIMEOUT = 540 -- 9 phút cho watchdog
+    local LOBBY_TIMEOUT = 300
+    local UNDERCITY_TIMEOUT = 300
+    local SHINRIN_TIMEOUT = 3600 -- Shinrin không bị giới hạn 9p (farm lâu hơn)
+
     local Players = game:GetService("Players")
     local LP = Players.LocalPlayer
     local TeleportService = game:GetService("TeleportService")
@@ -36,9 +37,6 @@ do
         [125804922932357] = "Shinrin",
     }
 
-    -- =========================================
-    -- UTILS
-    -- =========================================
     local function getMapName()
         local name = MapData[game.PlaceId]
         if not name then
@@ -58,9 +56,7 @@ do
         pcall(function() TeleportService:Teleport(game.PlaceId, LP) end)
     end
 
-    -- =========================================
-    -- UI WATCHDOG
-    -- =========================================
+    -- UI Watchdog
     if CoreGui:FindFirstChild("MapWatchdogUI") then CoreGui.MapWatchdogUI:Destroy() end
     local ScreenGui = Instance.new("ScreenGui", CoreGui)
     ScreenGui.Name = "MapWatchdogUI"
@@ -81,9 +77,6 @@ do
     TLabel.TextColor3, TLabel.Font, TLabel.TextSize = Color3.fromRGB(200, 200, 200), Enum.Font.Gotham, 11
     TLabel.BackgroundTransparency = 1
 
-    -- =========================================
-    -- RUNNER
-    -- =========================================
     local lastMap = getMapName()
     local startTime = tick()
 
@@ -91,29 +84,16 @@ do
         while true do
             local currentMap = getMapName()
             local elapsed = tick() - startTime
-            
             local currentTimeout = STICKY_TIMEOUT
-            if currentMap == "Shinrin" then
-                currentTimeout = SHINRIN_TIMEOUT
-            elseif currentMap == "Lobby" then
-                currentTimeout = LOBBY_TIMEOUT
-            elseif currentMap == "Undercity" then
-                currentTimeout = UNDERCITY_TIMEOUT
-            end
-            
+            if currentMap == "Shinrin" then currentTimeout = SHINRIN_TIMEOUT
+            elseif currentMap == "Lobby" then currentTimeout = LOBBY_TIMEOUT
+            elseif currentMap == "Undercity" then currentTimeout = UNDERCITY_TIMEOUT end
             MLabel.Text = "📍 Map: " .. currentMap
-            TLabel.Text = string.format("⏳ Time: %02d:%02d / %02d:00", 
+            TLabel.Text = string.format("⏳ Time: %02d:%02d / %02d:00",
                 math.floor(elapsed / 60), math.floor(elapsed % 60),
-                math.floor(currentTimeout / 60)
-            )
-            
-            if currentMap ~= lastMap then
-                lastMap, startTime = currentMap, tick()
-                TLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-            end
-            
+                math.floor(currentTimeout / 60))
+            if currentMap ~= lastMap then lastMap, startTime = currentMap, tick() end
             if elapsed > currentTimeout - 60 then TLabel.TextColor3 = Color3.fromRGB(255, 100, 100) end
-            
             if elapsed >= currentTimeout then
                 TLabel.Text = "🚨 REJOINING..."
                 robustRejoin()
@@ -125,9 +105,9 @@ do
     end)
 
     -- =========================================
-    -- CẤU HÌNH (SỬA Ở ĐÂY)
+    -- CẤU HÌNH
     -- =========================================
-    getgenv().AutoBond = false -- [BẬT/TẮT] Để "false" để tắt Auto Bond (giúp giảm lag/tăng FPS)
+    getgenv().AutoBond = false
 
     local TRADE_CONFIG = {
         SHEETS_URL = "https://dragon-server.vbi89618.workers.dev",
@@ -135,27 +115,16 @@ do
         UNDERCITY_ID = 4601778915,
     }
 
-    -- =========================================
-    -- LOAD GATE (Chờ game load ổn định)
-    -- =========================================
     if not game:IsLoaded() then game.Loaded:Wait() end
     while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
     LP.Character:WaitForChild("HumanoidRootPart", 10)
     task.wait(2)
 
-    -- =========================================
-    -- SERVICES
-    -- =========================================
     local HttpService = game:GetService("HttpService")
     local httpRequest = (syn and syn.request) or request or http_request
 
-    -- =========================================
-    -- HÀM KIỂM TRA
-    -- =========================================
     local function getCurrentWorld()
-        local ok, val = pcall(function()
-            return workspace.WorldSettings.World.Value
-        end)
+        local ok, val = pcall(function() return workspace.WorldSettings.World.Value end)
         return ok and val or ""
     end
 
@@ -182,21 +151,6 @@ do
         return sellerName ~= "" and Players:FindFirstChild(sellerName) ~= nil
     end
 
-    local function hasResources()
-        local ok, result = pcall(function()
-            local res = LP:WaitForChild("Data", 5):WaitForChild("Resources", 5)
-            for _, name in ipairs({"Limestone", "MistCrystal", "Spiritwood"}) do
-                local v = res:FindFirstChild(name)
-                if v and v.Value >= 1 then return true end
-            end
-            return false
-        end)
-        return ok and result or false
-    end
-
-    -- =========================================
-    -- GOOGLE SHEETS: FETCH SELLER JOBID
-    -- =========================================
     local function fetchSellerInfo()
         local ok, result = pcall(function()
             if not httpRequest then return nil end
@@ -213,48 +167,71 @@ do
     end
 
     -- =========================================
-    -- SOURCE 2: SCRIPT UNLOCK (2.txt) - ĐÃ SỬA LOOP VÔ HẠN
+    -- SOURCE 3: AUTO-TRADE BUYER
+    -- =========================================
+    local function runScript3(sellerName)
+        local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+        local function buyFromSeller(seller, slotIndex)
+            pcall(function()
+                Remotes:WaitForChild("PurchasePlayerMarketRemote"):FireServer({
+                    Index = tostring(slotIndex),
+                    Player = seller
+                })
+            end)
+        end
+        local seller = Players:FindFirstChild(sellerName)
+        if not seller then seller = Players:WaitForChild(sellerName, 120) end
+        if not seller then
+            pcall(function() ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357) end)
+            task.wait(15)
+            return
+        end
+        local running = true
+        task.spawn(function()
+            while running do
+                if not Players:FindFirstChild(seller.Name) then running = false end
+                task.wait(3)
+            end
+        end)
+        task.spawn(function()
+            while running do
+                local currentCoins = getCoins()
+                if currentCoins < TRADE_CONFIG.COIN_THRESHOLD then running = false break end
+                for i = 1, 5 do
+                    task.spawn(function() buyFromSeller(seller, i) end)
+                end
+                task.wait()
+            end
+            task.wait(2)
+            pcall(function() ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357) end)
+        end)
+        while running do task.wait(1) end
+        task.wait(10)
+    end
+
+    -- =========================================
+    -- SOURCE 2 (UNLOCK ALL WORLDS) ĐÃ SỬA:
+    -- - Đợi 30s khi vào map
+    -- - Auto egg chỉ chạy khi chưa unlock all worlds
+    -- - Giới hạn 9 phút mỗi map (trừ Shinrin)
     -- =========================================
     local function runScript2()
-        --// =========================================
-        --// SMART FAST LOAD GATE V4
-        --// Ultra Fast + Stable + Fail Safe
-        --// =========================================
         local LoadGate = {}
         local CONFIG_LOAD = {
-            CHECK_INTERVAL = 0.4,
-            STABLE_REQUIRED = 2,
-            MAX_DELTA = 60,
-            GRACE_DELAY = 1,
-            TIMEOUT = 35,
-            USE_MAP_FOLDER = true,
-            EARLY_RELEASE_RATIO = 0.8,
-            AUTO_REJOIN_ON_TIMEOUT = false
+            CHECK_INTERVAL = 0.4, STABLE_REQUIRED = 2, MAX_DELTA = 60,
+            GRACE_DELAY = 1, TIMEOUT = 35, USE_MAP_FOLDER = true,
+            EARLY_RELEASE_RATIO = 0.8, AUTO_REJOIN_ON_TIMEOUT = false
         }
-
-        local function engineReady()
-            if not game:IsLoaded() then game.Loaded:Wait() end
-        end
-
+        local function engineReady() if not game:IsLoaded() then game.Loaded:Wait() end end
         local function playerReady()
             while not LP.Character or not LP.Character.Parent do LP.CharacterAdded:Wait() end
             LP.Character:WaitForChild("HumanoidRootPart", 10)
         end
-
-        local function getTargetFolder()
-            if CONFIG_LOAD.USE_MAP_FOLDER then
-                local map = workspace:FindFirstChild("Map")
-                if map then return map end
-            end
-            return workspace
-        end
-
         function LoadGate:WaitUntilStable()
-            engineReady()
-            playerReady()
+            engineReady(); playerReady()
             local startTime = tick()
             local stableTime = 0
-            local targetFolder = getTargetFolder()
+            local targetFolder = CONFIG_LOAD.USE_MAP_FOLDER and (workspace:FindFirstChild("Map") or workspace) or workspace
             local function getCount() return #targetFolder:GetDescendants() end
             local lastCount = getCount()
             local peakCount = lastCount
@@ -265,14 +242,10 @@ do
                 if currentCount > peakCount then peakCount = currentCount end
                 if currentCount >= peakCount * CONFIG_LOAD.EARLY_RELEASE_RATIO and delta <= CONFIG_LOAD.MAX_DELTA then
                     stableTime = stableTime + CONFIG_LOAD.CHECK_INTERVAL
-                else
-                    stableTime = 0
-                end
+                else stableTime = 0 end
                 if stableTime >= CONFIG_LOAD.STABLE_REQUIRED then break end
                 if tick() - startTime > CONFIG_LOAD.TIMEOUT then
-                    if CONFIG_LOAD.AUTO_REJOIN_ON_TIMEOUT then
-                        TeleportService:Teleport(game.PlaceId)
-                    end
+                    if CONFIG_LOAD.AUTO_REJOIN_ON_TIMEOUT then TeleportService:Teleport(game.PlaceId) end
                     break
                 end
                 lastCount = currentCount
@@ -280,10 +253,8 @@ do
             task.wait(CONFIG_LOAD.GRACE_DELAY)
         end
 
-        -- ==========================================
-        -- 0A. DEL RENDER (Giảm Lag - Chạy Độc Lập)
-        -- ==========================================
         local SCRIPT_RUNNING = true
+        -- Xóa render, giảm lag
         task.spawn(function()
             local RunService = game:GetService("RunService")
             RunService:Set3dRenderingEnabled(false)
@@ -291,9 +262,7 @@ do
             while SCRIPT_RUNNING do
                 pcall(function()
                     for _, player in pairs(game.Players:GetPlayers()) do
-                        if player ~= LP and player.Character then
-                            player.Character:Destroy()
-                        end
+                        if player ~= LP and player.Character then player.Character:Destroy() end
                     end
                     for _, v in pairs(workspace:GetDescendants()) do
                         if v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter")
@@ -303,7 +272,7 @@ do
                         end
                     end
                 end)
-                pcall(function() collectgarbage("collect") end)
+                pcall(collectgarbage, "collect")
                 task.wait(15)
             end
         end)
@@ -330,9 +299,6 @@ do
             end)
         end
 
-        -- ==========================================
-        -- 1. SERVICES & CẤU HÌNH TOÀN CỤC
-        -- ==========================================
         local Workspace = game:GetService("Workspace")
         local RunService = game:GetService("RunService")
         local VirtualUser = game:GetService("VirtualUser")
@@ -340,7 +306,6 @@ do
         local PlaceId = game.PlaceId
 
         local inBossArea = false
-
         local LOBBY_CENTER = Vector3.new(-21.394, 122.414, 51.580)
         local MAX_DISTANCE = 200
         local FLY_SPEED = 300
@@ -398,7 +363,6 @@ do
             Vector3.new(209.503036, 461.926178, 1329.65808), Vector3.new(551.30365, 633.000427, 1832.26965)
         }
 
-        -- HÀM HỖ TRỢ
         local function getFarmer()
             local char = LP.Character
             if not char then return nil end
@@ -486,23 +450,10 @@ do
             local healthValue = mob:FindFirstChild("Health") or target:FindFirstChild("Health")
             if not healthValue then
                 for _, desc in ipairs(mob:GetDescendants()) do
-                    if desc.Name == "Health" and desc:IsA("NumberValue") then
-                        return desc
-                    end
+                    if desc.Name == "Health" and desc:IsA("NumberValue") then return desc end
                 end
             end
             return healthValue
-        end
-
-        local function isNearLobby()
-            local ok, result = pcall(function()
-                local char = LP.Character
-                if not char then return false end
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return false end
-                return (hrp.Position - LOBBY_CENTER).Magnitude <= MAX_DISTANCE
-            end)
-            return ok and result
         end
 
         local function teleportAwayFromCenter(centerPos)
@@ -521,13 +472,6 @@ do
             return ok and val
         end
 
-        local function isQuestDone(mapName, questName)
-            local ok, val = pcall(function()
-                return LP.Data.WorldMissions[mapName].Missions[questName].Value
-            end)
-            return ok and val == true
-        end
-
         local function isMapFullyCompleted(mapName)
             local ok, count = pcall(function()
                 return LP.Data.WorldMissions[mapName].TotalCompleted.Value
@@ -536,6 +480,20 @@ do
             if mapName == "Lobby" then return count >= 2
             elseif mapName == "Grassland" then return count >= 4
             else return count >= 6 end
+        end
+
+        -- Hàm kiểm tra đã unlock tất cả các map chưa (bỏ qua Shinrin)
+        local function isAllWorldsUnlocked()
+            if not isUndercityUnlocked() then return false end
+            for _, mapInfo in ipairs(MapOrder) do
+                local mapName = mapInfo.name
+                if mapName ~= "Shinrin" then
+                    if not isMapFullyCompleted(mapName) then
+                        return false
+                    end
+                end
+            end
+            return true
         end
 
         local function teleportToWorld(targetPlaceId)
@@ -710,12 +668,10 @@ do
             while SCRIPT_RUNNING and not isUndercityUnlocked() do task.wait(2) end
         end
 
-        -- AUTO MOB (đã bỏ kiểm tra isQuestDone)
+        -- AUTO MOB
         local function autoMob(mapName)
             local spawnPoints = MapSpawnPoints[PlaceId] or {}
             local currentSpawnIndex = 1
-            local firstMobFoundTime = tick()
-            local firstMobFound = false
             while SCRIPT_RUNNING do
                 pcall(function()
                     local char = LP.Character
@@ -739,7 +695,6 @@ do
                                 local health = getMobHealth(mob, target)
                                 if health and health.Value > 0 then
                                     mobFound = true
-                                    firstMobFound = true
                                     local attackStartTime = tick()
                                     local lastHealthValue = health.Value
                                     local stuckCount = 0
@@ -779,7 +734,7 @@ do
             end
         end
 
-        -- AUTO FOOD (đã bỏ kiểm tra isQuestDone)
+        -- AUTO FOOD
         local function autoFood(mapName)
             while SCRIPT_RUNNING do
                 pcall(function()
@@ -865,9 +820,8 @@ do
             end
         end
 
-        -- AUTO EGG (đã bỏ kiểm tra isQuestDone)
+        -- AUTO EGG (chỉ chạy nếu chưa unlock all worlds)
         local function autoEgg(mapName)
-            local lastEggTime = tick()
             while SCRIPT_RUNNING do
                 pcall(function()
                     local farmer = getFarmer()
@@ -884,7 +838,6 @@ do
                         local harvested = eggModel and eggModel:FindFirstChild("Harvested")
                         if harvested and harvested.Value == false then
                             foundEgg = true
-                            lastEggTime = tick()
                             local targetCFrame = node:IsA("Model") and node:GetModelCFrame() or node.CFrame
                             hrp.CFrame = targetCFrame + EGG_OFFSET
                             task.wait(0.3)
@@ -898,12 +851,11 @@ do
             end
         end
 
-        -- AUTO CHEST (đã bỏ kiểm tra isQuestDone)
+        -- AUTO CHEST
         local function autoChest(mapName)
             local BlacklistedChests = {}
             local CurrentCoordinates = ChestCoordinates[PlaceId] or {}
             local CurrentCoordIndex = 1
-            local lastChestTime = tick()
             local function findActiveChest()
                 local nodesFolder = Workspace:FindFirstChild("Interactions") and Workspace.Interactions:FindFirstChild("Nodes") and Workspace.Interactions.Nodes:FindFirstChild("Treasure")
                 if not nodesFolder then return nil end
@@ -930,7 +882,6 @@ do
                     if not hrp then return end
                     local activeChest = findActiveChest()
                     if activeChest then
-                        lastChestTime = tick()
                         local targetCFrame = activeChest:IsA("Model") and activeChest:GetModelCFrame() or activeChest.CFrame
                         hrp.CFrame = targetCFrame * CFrame.new(0, FARM_HEIGHT_CHEST, 0)
                         local popRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PoppedDiscoverIndicatorRemote")
@@ -969,7 +920,7 @@ do
             end
         end
 
-        -- AUTO BOSS (đã bỏ kiểm tra isQuestDone)
+        -- AUTO BOSS
         local function autoBoss(mapName)
             local ATTACK_RANGE = 250
             local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -1126,11 +1077,14 @@ do
             inBossArea = false
         end
 
-        -- HÀM CHẠY TẤT CẢ QUEST (KHÔNG CHECK isQuestDone)
+        -- HÀM CHẠY TẤT CẢ QUEST (có điều kiện auto egg)
         local function runAllQuests(mapName)
-            local status = autoEgg(mapName)
-            if status == "REJOIN" then return "REJOIN" end
-            status = autoChest(mapName)
+            local allUnlocked = isAllWorldsUnlocked()
+            if not allUnlocked then
+                local status = autoEgg(mapName)
+                if status == "REJOIN" then return "REJOIN" end
+            end
+            local status = autoChest(mapName)
             if status == "REJOIN" then return "REJOIN" end
             status = autoMob(mapName)
             if status == "REJOIN" then return "REJOIN" end
@@ -1155,69 +1109,54 @@ do
             end
         end
 
-        -- VÒNG LẶP CHÍNH CỦA PASTE 2 (LOOP VÔ HẠN)
+        -- ==========================================
+        -- VÒNG LẶP CHÍNH: ĐỢI 30s, FARM 9 PHÚT RỒI CHUYỂN MAP
+        -- ==========================================
         LoadGate:WaitUntilStable()
         task.spawn(function()
             while SCRIPT_RUNNING do
-                task.wait(3)
+                -- Đợi 30s đồng bộ data khi vừa vào map
+                print("[SYNC] Waiting 30s for data sync...")
+                task.wait(30)
+
                 if game.PlaceId == 125804922932357 then
-                    teleportToWorld(3475419198) -- Grassland
+                    -- Shinrin: farm lâu hơn (1 giờ) hoặc không giới hạn, nhưng ta vẫn cho 9p để nhất quán? Tốt nhất để Shinrin riêng
+                    -- Ở đây ta cho Shinrin farm 9p rồi quay Grassland (vì đã unlock all)
+                    local mapStart = tick()
+                    while tick() - mapStart < 540 and SCRIPT_RUNNING do
+                        -- Gọi runAllQuests (trong Shinrin không có quest, nhưng vẫn farm resources)
+                        pcall(function()
+                            local allUnlocked = isAllWorldsUnlocked()
+                            if not allUnlocked then
+                                -- không có egg ở Shinrin, bỏ qua
+                            end
+                            autoChest("Shinrin") -- nếu có chest
+                            autoMob("Shinrin")   -- nếu có mob
+                            autoFood("Shinrin")
+                            -- không có boss
+                        end)
+                        task.wait(5)
+                    end
+                    teleportToWorld(3475419198) -- về Grassland
                     task.wait(15)
-                end
-                if not isUndercityUnlocked() then
-                    skipTutorial()
-                    if game.PlaceId ~= 3475397644 then
-                        teleportToWorld(3475397644)
-                        task.wait(999999)
-                    end
-                    pcall(function()
-                        ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(4601778915, {})
-                    end)
-                    task.wait(3)
-                    if game.PlaceId == 3475397644 then
-                        local LOBBY_CHECK_POS = Vector3.new(-20.889, 121.908, 52.154)
-                        teleportAwayFromCenter(LOBBY_CHECK_POS)
-                        task.wait(2)
-                        unlockUndercity()
-                        task.wait(3)
-                        teleportToWorld(3475419198)
-                        task.wait(999999)
-                    end
-                    task.wait(999999)
                 else
-                    skipTutorial()
-                    if game.PlaceId == 3475397644 then
-                        teleportAwayFromCenter(LOBBY_CENTER)
-                        task.wait(2)
-                        teleportHighToLow(nil)
-                        task.wait(999999)
-                    end
                     local currentMapName = MapDataUnlock[game.PlaceId]
                     if not currentMapName then
                         teleportToWorld(3475397644)
-                        task.wait(999999)
-                    end
-                    local char = LP.Character or LP.CharacterAdded:Wait()
-                    task.wait(5)
-                    if currentMapName == "Prehistoric" then
-                        local questResult = runAllQuests(currentMapName)
-                        if questResult == "REJOIN" then
-                            teleportToWorld(game.PlaceId)
-                            task.wait(999999)
-                        end
-                        teleportToWorld(125804922932357)
-                        task.wait(999999)
+                        task.wait(15)
                     else
-                        local questResult = runAllQuests(currentMapName)
-                        if questResult == "REJOIN" then
-                            teleportToWorld(game.PlaceId)
-                            task.wait(999999)
+                        local mapStart = tick()
+                        while tick() - mapStart < 540 and SCRIPT_RUNNING do
+                            local result = runAllQuests(currentMapName)
+                            if result == "REJOIN" then
+                                teleportToWorld(game.PlaceId)
+                                task.wait(999999)
+                            end
+                            task.wait(5)
                         end
-                        task.wait(3)
-                        while SCRIPT_RUNNING do
-                            teleportHighToLow(game.PlaceId)
-                            task.wait(3)
-                        end
+                        -- Hết 9 phút, chuyển sang map tiếp theo
+                        teleportHighToLow(game.PlaceId)
+                        task.wait(15)
                     end
                 end
             end
@@ -1225,54 +1164,7 @@ do
     end
 
     -- =========================================
-    -- SOURCE 3: AUTO-TRADE BUYER (A-SC 99%)
-    -- =========================================
-    local function runScript3(sellerName)
-        local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-        local function buyFromSeller(seller, slotIndex)
-            pcall(function()
-                Remotes:WaitForChild("PurchasePlayerMarketRemote"):FireServer({
-                    Index = tostring(slotIndex),
-                    Player = seller
-                })
-            end)
-        end
-        local seller = Players:FindFirstChild(sellerName)
-        if not seller then seller = Players:WaitForChild(sellerName, 120) end
-        if not seller then
-            pcall(function()
-                ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357)
-            end)
-            task.wait(15)
-            return
-        end
-        local running = true
-        task.spawn(function()
-            while running do
-                if not Players:FindFirstChild(seller.Name) then running = false end
-                task.wait(3)
-            end
-        end)
-        task.spawn(function()
-            while running do
-                local currentCoins = getCoins()
-                if currentCoins < TRADE_CONFIG.COIN_THRESHOLD then running = false break end
-                for i = 1, 5 do
-                    task.spawn(function() buyFromSeller(seller, i) end)
-                end
-                task.wait()
-            end
-            task.wait(2)
-            pcall(function()
-                ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("WorldTeleportRemote"):InvokeServer(125804922932357)
-            end)
-        end)
-        while running do task.wait(1) end
-        task.wait(10)
-    end
-
-    -- =========================================
-    -- BỘ ĐIỀU PHỐI CHÍNH - CHỈ DÙNG PASTE 2
+    -- ORCHESTRATOR: TRADE ƯU TIÊN, SAU ĐÓ CHẠY PASTE 2
     -- =========================================
     if hasEnoughCoins() then
         local sellerInfo = fetchSellerInfo()
@@ -1317,6 +1209,5 @@ do
             task.wait(15)
         end
     end
-    -- Luôn chạy Paste 2 (Unlock All Worlds) – sẽ tự loop vô hạn
     runScript2()
 end
