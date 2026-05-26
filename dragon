@@ -14,6 +14,31 @@ javascript:(function(){
         form: "https://docs.google.com/forms/d/e/1FAIpQLSdCgmhwlNG8WBMigyLQlO5NCNL74lt5Uu16DgPDAY9jZhrogQ/viewform?usp=dialog"
     };
 
+    /* 1.5. STYLE (ELLIPSIS + SAME HEIGHT) */
+    const styleId = "gh-automation-style";
+    if (!document.getElementById(styleId)) {
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
+            #gh-automation-ui button {
+                height: 30px !important;
+                line-height: 30px !important;
+                padding: 0 8px !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                box-sizing: border-box !important;
+            }
+            #gh-automation-ui #gh-toggle-btn,
+            #gh-automation-ui #gh-exit-btn {
+                height: 18px !important;
+                line-height: 18px !important;
+                padding: 0 8px !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     /* 2. HÀM XỬ LÝ */
     const quickPaste = (text) => {
         const activeEl = document.activeElement;
@@ -383,7 +408,7 @@ javascript:(function(){
 
             </div>
 
-            <button
+            <button id="gh-exit-btn"
                 onclick="document.getElementById('gh-automation-ui').remove()"
                 style="
                     background:none;
