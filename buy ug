@@ -1,93 +1,71 @@
 // ==UserScript==
-// @name         UGPhone Auto Purchase Full
+// @name         UGPhone Auto Click 3 Buttons (Custom Selector)
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Tự động click "Đi nhận" -> "Đặt mua" -> "Thanh toán" trên UGPhone
-// @author       You
+// @version      10.0
+// @description  Kiểm tra 3 nút: "Đi nhận" (XPath), "Đặt mua" (XPath), "Thanh toán" (CSS: #buy-btn > div > span)
 // @match        https://www.ugphone.com/toc-portal/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=ugphone.com
 // @grant        none
+// @run-at       document-idle
 // ==/UserScript==
 
 (async function() {
     'use strict';
 
-    // Selectors
-    const selectorGetBtn = 'div.get-btn';                     // Nút "Đi nhận"
-    const selectorOrderBtn = 'button#buy-btn';                // Nút "Đặt mua" (trang purchaseDevice)
-    const selectorPayBtn = 'button#buy-btn';                  // Nút "Thanh toán" (trang thanh toán)
+    // Định nghĩa các nút: mỗi nút có một hàm tìm riêng (selector hoặc XPath)
+    const buttons = [
+        {
+            name: 'Đi nhận',
+            find: () => document.evaluate(
+                "//div[contains(@class, 'get-btn') and contains(., 'Đi nhận')]",
+                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue
+        },
+        {
+            name: 'Đặt mua',
+            find: () => document.evaluate(
+                "//*[contains(text(), 'Đặt mua')]",
+                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue
+        },
+        {
+            name: 'Thanh toán',
+            find: () => document.querySelector('#buy-btn > div > span') // CSS selector theo yêu cầu
+        }
+    ];
 
-    // Hàm chờ phần tử xuất hiện
-    function waitForElement(selector, timeout = 10000) {
-        return new Promise((resolve, reject) => {
-            const el = document.querySelector(selector);
-            if (el) return resolve(el);
-            const observer = new MutationObserver(() => {
-                const el = document.querySelector(selector);
-                if (el) {
-                    observer.disconnect();
-                    resolve(el);
-                }
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
-            setTimeout(() => {
-                observer.disconnect();
-                reject(new Error(`Timeout: không tìm thấy ${selector}`));
-            }, timeout);
-        });
+    // Hàm tìm nút đầu tiên xuất hiện
+    function findAnyButton() {
+        for (let btn of buttons) {
+            const el = btn.find();
+            if (el) return { el, name: btn.name };
+        }
+        return null;
     }
 
-    // Hàm chuyển hướng trang (chờ 3 giây)
-    function navigateTo(url) {
-        return new Promise((resolve) => {
-            window.location.href = url;
-            setTimeout(() => resolve(), 3000);
-        });
-    }
-
-    // Hàm click và log
-    async function clickWithLog(selector, stepName) {
+    async function clickButton(el, name) {
         try {
-            console.log(`\n🔍 [${stepName}] Đang tìm phần tử...`);
-            const btn = await waitForElement(selector);
-            console.log(`✅ [${stepName}] Đã tìm thấy (${btn.tagName}, class: ${btn.className})`);
-            console.log(`📍 URL trước click: ${window.location.href}`);
-            btn.click();
-            console.log(`🖱️ Đã click thành công.`);
-            await new Promise(r => setTimeout(r, 2000));
-            console.log(`📍 URL sau click: ${window.location.href}`);
+            el.click();
+            console.log(`[UGPhone] ✅ Đã click: "${name}"`);
+            await new Promise(r => setTimeout(r, 1000));
+            return true;
         } catch (err) {
-            console.error(`❌ [${stepName}] Lỗi: ${err.message}`);
+            console.error(`[UGPhone] ❌ Lỗi click "${name}":`, err);
+            return false;
         }
     }
 
-    // ---------- BẮT ĐẦU QUY TRÌNH ----------
-    console.log('🚀 Bắt đầu tự động hóa UGPhone...');
-
-    // Bước 1: Điều hướng đến Dashboard
-    console.log('\n📌 Bước 1: Điều hướng đến Dashboard');
-    await navigateTo('https://www.ugphone.com/toc-portal/#/dashboard/index');
-
-    // Bước 2: Click "Đi nhận"
-    await clickWithLog(selectorGetBtn, 'Đi nhận');
-
-    // Bước 3: Đảm bảo đang ở trang purchaseDevice
-    if (!window.location.href.includes('purchaseDevice')) {
-        console.log('⚠️ Chưa ở trang purchaseDevice, điều hướng thủ công...');
-        await navigateTo('https://www.ugphone.com/toc-portal/#/purchaseDevice');
-    } else {
-        console.log('✅ Đã ở trang purchaseDevice');
+    async function run() {
+        while (true) {
+            const found = findAnyButton();
+            if (found) {
+                await clickButton(found.el, found.name);
+                // Sau khi click, tiếp tục vòng lặp ngay (trang có thể đã chuyển)
+            } else {
+                console.log(`[UGPhone] ⏳ Không thấy nút nào, chờ 5 giây...`);
+                await new Promise(r => setTimeout(r, 5000));
+            }
+        }
     }
 
-    // Bước 4: Click "Đặt mua"
-    await clickWithLog(selectorOrderBtn, 'Đặt mua');
-
-    // Bước 5: Chờ trang thanh toán load và click "Thanh toán"
-    // Lưu ý: Sau khi click "Đặt mua", trang sẽ chuyển hướng đến thanh toán (có thể chứa "freeTest").
-    // Ta chỉ cần chờ nút "Thanh toán" xuất hiện (cùng selector #buy-btn nhưng ở trang khác).
-    console.log('\n📌 Bước 5: Chờ nút thanh toán xuất hiện...');
-    await waitForElement(selectorPayBtn, 15000); // chờ tối đa 15 giây
-    await clickWithLog(selectorPayBtn, 'Thanh toán');
-
-    console.log('\n✅ Hoàn thành toàn bộ quy trình!');
+    run();
 })();
