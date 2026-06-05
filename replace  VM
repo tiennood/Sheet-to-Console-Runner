@@ -24,12 +24,12 @@
             <button id="closeBtn" style="background:#ef4444; border:none; color:white; border-radius:4px; padding:2px 6px;">✖</button>
         </div>
         <div style="margin-bottom: 8px;">
-            <label>📦 JSON (mỗi dòng 1 object):</label>
+            <label>📦 JSON (mỗi dòng 1 object hoặc mảng):</label>
             <textarea id="jsonListInput" rows="4" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" placeholder='{"UGPHONE-Token":"...","UGPHONE-ID":"..."}'></textarea>
         </div>
         <div style="margin-bottom: 8px;">
-            <label>🚫 Blacklist VM (cách nhau dấu phẩy):</label>
-            <textarea id="blacklistInput" rows="2" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" placeholder="VM010050015200, VM123456789012"></textarea>
+            <label>🚫 Blacklist VM (mảng JSON hoặc text cách dấu phẩy):</label>
+            <textarea id="blacklistInput" rows="2" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" placeholder='["VM010010076126","VM010010036226"] hoặc VM010010076126, VM010010036226'></textarea>
         </div>
         <div style="margin-bottom: 8px;">
             <label>⏱️ Delay trước mỗi API (ms):</label>
@@ -62,11 +62,24 @@
     `;
     document.body.appendChild(container);
 
-    // Hàm fetch có delay (tham số delayMs)
+    // Hàm parse blacklist (hỗ trợ mảng JSON hoặc text)
+    function parseBlacklist(input) {
+        input = input.trim();
+        if (!input) return new Set();
+        // Thử parse như JSON array
+        if (input.startsWith('[') && input.endsWith(']')) {
+            try {
+                const arr = JSON.parse(input);
+                if (Array.isArray(arr)) return new Set(arr.map(v => v.trim()));
+            } catch(e) { /* không phải JSON, fallback */ }
+        }
+        // Nếu không, xử lý như text cách nhau dấu phẩy, xuống dòng, khoảng trắng
+        const items = input.split(/[,\s\n]+/).filter(s => s.trim().length > 0);
+        return new Set(items);
+    }
+
     async function fetchVMId(accessToken, loginId, webFingerprint, delayMs) {
-        // Đợi delay trước khi gọi API đầu tiên
         if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
-        
         const headers = {
             "accept": "application/json, text/plain, */*",
             "content-type": "application/json;charset=UTF-8",
@@ -128,11 +141,13 @@
 
     async function processAccount(accountJson, blacklistSet, reasonId, delayMs, index) {
         const row = document.getElementById(`row-${index}`);
-        const oldVmCell = row.cells[1];
-        const inBlacklistCell = row.cells[2];
-        const actionCell = row.cells[3];
-        const newVmCell = row.cells[4];
-        const errorCell = row.cells[5];
+        if (!row) return;
+        const cells = row.cells;
+        const oldVmCell = cells[1];
+        const inBlacklistCell = cells[2];
+        const actionCell = cells[3];
+        const newVmCell = cells[4];
+        const errorCell = cells[5];
         
         try {
             let jsonObj = typeof accountJson === 'string' ? JSON.parse(accountJson) : accountJson;
@@ -141,7 +156,6 @@
             const webFingerprint = jsonObj['ugBrowserId'] || jsonObj['web-fingerprint'];
             if (!accessToken || !loginId) throw new Error("Thiếu token/login-id");
 
-            // Gọi API lấy VM hiện tại (có delay)
             const { vmId: oldVm, serviceId } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
             oldVmCell.innerText = oldVm;
             const isBlacklisted = blacklistSet.has(oldVm);
@@ -149,11 +163,8 @@
             actionCell.innerText = isBlacklisted ? "Thay thế" : "Bỏ qua";
             
             if (isBlacklisted) {
-                // Replace device (cũng có delay trước khi gọi)
                 await replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs);
-                // Chờ 2 giây cho đơn hàng mới tạo
                 await new Promise(r => setTimeout(r, 2000));
-                // Lấy VM mới (có delay)
                 const { vmId: newVm } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
                 newVmCell.innerText = newVm;
                 errorCell.innerText = "";
@@ -175,6 +186,8 @@
         const delayMs = parseInt(document.getElementById('delayInput').value) || 0;
         const reasonId = document.getElementById('reasonIdInput').value.trim() || "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
         if (!jsonText) return alert("Nhập JSON");
+        
+        // Parse danh sách accounts
         let accounts = [];
         try {
             let parsed = JSON.parse(jsonText);
@@ -186,14 +199,23 @@
                 if (line.trim()) accounts.push(JSON.parse(line));
             }
         }
-        if (!accounts.length) return alert("Không có JSON");
-        const blacklistSet = new Set(blacklistText.split(/[,\s\n]+/).filter(s=>s.trim()));
+        if (!accounts.length) return alert("Không có JSON hợp lệ");
+        
+        // Parse blacklist (hỗ trợ mảng JSON)
+        const blacklistSet = parseBlacklist(blacklistText);
+        
         const tbody = document.getElementById('resultBody');
         tbody.innerHTML = '';
         for (let i = 0; i < accounts.length; i++) {
             const row = tbody.insertRow();
             row.id = `row-${i}`;
-            row.innerHTML = `<tr>${i+1}</td><td>⏳</td><td>⏳</td><td>⏳</td><td>⏳</td><td></td>`;
+            for (let j = 0; j < 6; j++) {
+                const cell = row.insertCell();
+                cell.style.border = "1px solid #444";
+                cell.style.padding = "2px";
+                if (j === 0) cell.innerText = i+1;
+                else cell.innerText = "⏳";
+            }
         }
         for (let i = 0; i < accounts.length; i++) {
             await processAccount(accounts[i], blacklistSet, reasonId, delayMs, i);
@@ -202,11 +224,12 @@
 
     function exportCSV() {
         let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
-        document.querySelectorAll('#resultBody tr').forEach(row => {
+        const rows = document.querySelectorAll('#resultBody tr');
+        for (const row of rows) {
             const cells = row.cells;
             csv += `${cells[0].innerText},${cells[1].innerText},${cells[2].innerText},${cells[3].innerText},${cells[4].innerText},${cells[5].innerText}\n`;
-        });
-        const blob = new Blob([csv], {type: "text/csv"});
+        }
+        const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = "ugphone_results.csv";
