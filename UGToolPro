@@ -28,13 +28,251 @@
         .flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     `;
 
+    // Hàm getBuyScript trả về string script (đã sửa lỗi)
+    const getBuyScript = function() {
+        return `
+            (async function() {
+                const CONFIG = {
+                    REGION: 'Hong Kong',
+                    AUTO_PAY: true,
+                    TIMEOUT: 30000,
+                };
+                const stepLog = [];
+                function addStep(step, status, detail) { 
+                    const msg = step + " - " + status + (detail ? ": " + detail : "");
+                    console.log("[UGphoneBuy] " + msg);
+                    stepLog.push({ Step: step, Status: status, Detail: detail || '' });
+                }
+                
+                function isElementClickable(el) {
+                    if (!el) return false;
+                    if (el.disabled === true) return false;
+                    const ariaDisabled = el.getAttribute('aria-disabled');
+                    if (ariaDisabled === 'true') return false;
+                    if (el.classList && (el.classList.contains('disabled') || el.classList.contains('btn-disabled'))) return false;
+                    
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                    if (style.pointerEvents === 'none') return false;
+                    
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) return false;
+                    if (el.offsetParent === null && style.position !== 'fixed') return false;
+                    
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    const elemAtCenter = document.elementsFromPoint(centerX, centerY)[0];
+                    if (elemAtCenter !== el && !el.contains(elemAtCenter)) {
+                        console.warn("[UGphoneBuy] Nút Pay bị che bởi:", elemAtCenter);
+                        return false;
+                    }
+                    return true;
+                }
+                
+                function findPayButton() {
+                    let btn = document.querySelector('#buy-btn');
+                    if (btn && isElementClickable(btn) && btn.textContent.trim().toLowerCase() === 'pay') return btn;
+                    
+                    const payDiv = document.querySelector('.pay-btn');
+                    if (payDiv) {
+                        const innerBtn = payDiv.querySelector('button');
+                        if (innerBtn && isElementClickable(innerBtn) && innerBtn.textContent.trim().toLowerCase() === 'pay') return innerBtn;
+                    }
+                    
+                    const xpath = "//button[@id='buy-btn' and translate(normalize-space(text()), 'PAY', 'pay') = 'pay']";
+                    const xresult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    const xbtn = xresult.singleNodeValue;
+                    if (xbtn && isElementClickable(xbtn)) return xbtn;
+                    
+                    const allBtns = Array.from(document.querySelectorAll('button'));
+                    return allBtns.find(b => b.textContent.trim().toLowerCase() === 'pay' && isElementClickable(b));
+                }
+                
+                async function waitForPayButton(timeout = 30000) {
+                    let observer = null;
+                    let timeoutId = null;
+                    let intervalId = null;
+                    return new Promise((resolve, reject) => {
+                        const cleanup = () => {
+                            if (observer) observer.disconnect();
+                            if (timeoutId) clearTimeout(timeoutId);
+                            if (intervalId) clearInterval(intervalId);
+                        };
+                        const check = () => {
+                            const btn = findPayButton();
+                            if (btn) {
+                                addStep("Tìm thấy nút Pay", "THÀNH CÔNG", "clickable");
+                                cleanup();
+                                resolve(btn);
+                                return true;
+                            }
+                            return false;
+                        };
+                        if (check()) return;
+                        observer = new MutationObserver(() => {
+                            requestAnimationFrame(() => check());
+                        });
+                        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'style'] });
+                        intervalId = setInterval(() => {
+                            if (check()) clearInterval(intervalId);
+                        }, 200);
+                        timeoutId = setTimeout(() => {
+                            cleanup();
+                            reject(new Error("Không tìm thấy nút Pay có thể click sau " + timeout + "ms"));
+                        }, timeout);
+                    });
+                }
+                
+                function waitForElement(selector, timeout) {
+                    return new Promise((resolve, reject) => {
+                        const start = Date.now();
+                        const check = () => {
+                            const el = document.querySelector(selector);
+                            if (el) return resolve(el);
+                            if (Date.now() - start >= timeout) reject(new Error("Timeout: " + selector));
+                            requestAnimationFrame(check);
+                        };
+                        check();
+                    });
+                }
+                
+                function waitForHash(target, timeout) {
+                    return new Promise((resolve, reject) => {
+                        if (window.location.hash.includes(target)) return resolve(window.location.hash);
+                        const onHashChange = () => {
+                            if (window.location.hash.includes(target)) {
+                                window.removeEventListener('hashchange', onHashChange);
+                                clearTimeout(timer);
+                                resolve(window.location.hash);
+                            }
+                        };
+                        window.addEventListener('hashchange', onHashChange);
+                        const timer = setTimeout(() => {
+                            window.removeEventListener('hashchange', onHashChange);
+                            reject(new Error("Timeout waiting for hash: " + target));
+                        }, timeout);
+                    });
+                }
+                
+                function findOrderButton() {
+                    const btns = Array.from(document.querySelectorAll('#buy-btn, button'));
+                    return btns.find(btn => {
+                        const text = btn.textContent.trim().toLowerCase();
+                        return (text.includes('đặt mua') || text.includes('buy')) && btn.offsetParent !== null && !btn.disabled;
+                    });
+                }
+                
+                function isFreeTrial(cardElement) {
+                    const text = cardElement.textContent.toLowerCase();
+                    return text.includes('free trial') || text.includes('hour') || text.includes('4-hour');
+                }
+                
+                try {
+                    addStep("Bắt đầu", "INFO", "Chuẩn bị mua máy");
+                    if (!window.location.hash.includes('/dashboard')) {
+                        window.location.hash = '#/dashboard/index';
+                        await waitForHash('/dashboard', 10000);
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                    try {
+                        const getBtn = await waitForElement('.get-btn', 5000);
+                        if (getBtn) { getBtn.click(); await new Promise(r => setTimeout(r, 1000)); }
+                    } catch(e) { addStep("Get máy", "BỎ QUA", "Không có nút Get"); }
+                    
+                    if (!window.location.hash.includes('/purchaseDevice')) {
+                        window.location.hash = '#/purchaseDevice';
+                        await waitForHash('/purchaseDevice', 15000);
+                    }
+                    await waitForElement('.room-item', 15000);
+                    const allRooms = Array.from(document.querySelectorAll('.room-item'));
+                    const targetRoom = allRooms.find(r => r.textContent.includes(CONFIG.REGION));
+                    if (!targetRoom) throw new Error("Không tìm thấy vùng " + CONFIG.REGION);
+                    targetRoom.click();
+                    addStep("Chọn vùng", "THÀNH CÔNG", CONFIG.REGION);
+                    await new Promise(r => setTimeout(r, 500));
+                    
+                    await waitForElement('#active-card', 15000);
+                    const cards = Array.from(document.querySelectorAll('#active-card'));
+                    let targetCard = null;
+                    const vipCards = cards.filter(card => card.textContent.toLowerCase().includes('vip') && !isFreeTrial(card));
+                    if (vipCards.length > 0) {
+                        const getDays = (text) => {
+                            const match = text.match(/(\\d+)\\s*[Nn]gày|[Dd]ays?/);
+                            if (match) return parseInt(match[1]);
+                            const numMatch = text.match(/\\b(250|365|180|90|30)\\b/);
+                            return numMatch ? parseInt(numMatch[1]) : 0;
+                        };
+                        vipCards.sort((a,b) => getDays(b.textContent) - getDays(a.textContent));
+                        targetCard = vipCards[0];
+                        addStep("Chọn gói VIP", "THÀNH CÔNG", targetCard.textContent.trim());
+                    } else {
+                        const trialCards = cards.filter(isFreeTrial);
+                        if (trialCards.length) {
+                            targetCard = trialCards[0];
+                            addStep("Chọn gói dùng thử", "THÀNH CÔNG", targetCard.textContent.trim());
+                        } else {
+                            targetCard = cards[0];
+                            addStep("Chọn gói (fallback)", "THÀNH CÔNG", targetCard.textContent.trim());
+                        }
+                    }
+                    if (!targetCard) throw new Error("Không có gói nào");
+                    const isTrial = isFreeTrial(targetCard);
+                    targetCard.click();
+                    await new Promise(r => setTimeout(r, 1500));
+                    
+                    await waitForElement('#buy-btn', 15000);
+                    const orderBtn = findOrderButton();
+                    if (orderBtn) orderBtn.click();
+                    else throw new Error("Không tìm thấy nút Đặt mua");
+                    addStep("Đặt mua", "THÀNH CÔNG");
+                    
+                    if (isTrial) {
+                        addStep("Gói dùng thử", "INFO", "Không cần thanh toán, chờ chuyển trang...");
+                        try {
+                            await Promise.race([
+                                waitForHash('/waiting', 30000),
+                                waitForHash('/dashboard', 60000)
+                            ]);
+                            addStep("Hoàn tất (trial)", "THÀNH CÔNG", "Đã chuyển trang");
+                        } catch(e) {
+                            addStep("Hoàn tất (trial)", "WARN", "Không thấy hash, thử reload dashboard");
+                            window.location.hash = '#/dashboard/index';
+                            await waitForHash('/dashboard', 15000);
+                        }
+                        await new Promise(r => setTimeout(r, 3000));
+                    } else {
+                        addStep("Chờ nút Pay", "INFO", "Đang tìm nút thanh toán...");
+                        const payBtn = await waitForPayButton(30000);
+                        await new Promise(r => setTimeout(r, 300));
+                        addStep("Click nút Pay", "THÀNH CÔNG");
+                        payBtn.click();
+                        addStep("Nhấn thanh toán", "THÀNH CÔNG");
+                        try {
+                            await waitForHash('/waiting', 30000);
+                            addStep("Chờ xử lý", "THÀNH CÔNG");
+                        } catch(e) { addStep("Chờ waiting", "WARN", "Không thấy hash waiting"); }
+                        try {
+                            await waitForHash('/dashboard', 120000);
+                            addStep("Hoàn tất", "THÀNH CÔNG");
+                        } catch(e) { addStep("Hoàn tất", "WARN", "Không thấy dashboard nhưng có thể thành công"); }
+                    }
+                    addStep("MUA MÁY", "THÀNH CÔNG", "Đã mua/kích hoạt máy");
+                    return { success: true, stepLog };
+                } catch(err) {
+                    addStep("MUA MÁY", "THẤT BẠI", err.message);
+                    return { success: false, error: err.message, stepLog };
+                }
+            })();
+        `;
+    };
+
     const html = `
         <!DOCTYPE html>
         <html>
-        <head><title>UGphone Console Tool Pro - Smart (Fixed Pay)</title><style>${styles}</style></head>
+        <head><title>UGphone Console Tool Pro - Fixed</title><style>${styles}</style></head>
         <body>
         <div class="tool-container">
-            <div class="flex"><strong>🔧 UGphone Console Tool Pro (Pop-up)</strong><button id="closeBtn" class="btn-danger" style="margin-left:auto;">✖ Đóng</button></div>
+            <div class="flex"><strong>🔧 UGphone Console Tool Pro (Fixed)</strong><button id="closeBtn" class="btn-danger" style="margin-left:auto;">✖ Đóng</button></div>
             <div class="row">
                 <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON - Ví dụ:\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
                 <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID - Ví dụ:\n["VM123456", "VM789012"]'></textarea>
@@ -82,203 +320,6 @@
                     return new Set(input.split(/[,\\s\\n]+/).filter(s=>s.trim()));
                 }
                 
-                // ------------------- SCRIPT MUA MÁY (ĐÃ SỬA LỖI PAY) -------------------
-                const getBuyScript = function() {
-                    return \`
-                        (async function() {
-                            const CONFIG = {
-                                REGION: 'Hong Kong',
-                                AUTO_PAY: true,
-                                TIMEOUT: 30000,
-                            };
-                            const stepLog = [];
-                            function addStep(step, status, detail) { 
-                                const msg = step + " - " + status + (detail ? ": " + detail : "");
-                                console.log("[UGphoneBuy] " + msg);
-                                stepLog.push({ Step: step, Status: status, Detail: detail || '' });
-                            }
-                            function waitForElement(selector, timeout) {
-                                return new Promise((resolve, reject) => {
-                                    const start = Date.now();
-                                    const check = () => {
-                                        const el = document.querySelector(selector);
-                                        if (el) return resolve(el);
-                                        if (Date.now() - start >= timeout) reject(new Error("Timeout: " + selector));
-                                        requestAnimationFrame(check);
-                                    };
-                                    check();
-                                });
-                            }
-                            function waitForHash(target, timeout) {
-                                return new Promise((resolve, reject) => {
-                                    if (window.location.hash.includes(target)) return resolve(window.location.hash);
-                                    const onHashChange = () => {
-                                        if (window.location.hash.includes(target)) {
-                                            window.removeEventListener('hashchange', onHashChange);
-                                            clearTimeout(timer);
-                                            resolve(window.location.hash);
-                                        }
-                                    };
-                                    window.addEventListener('hashchange', onHashChange);
-                                    const timer = setTimeout(() => {
-                                        window.removeEventListener('hashchange', onHashChange);
-                                        reject(new Error("Timeout waiting for hash: " + target));
-                                    }, timeout);
-                                });
-                            }
-                            // Tìm nút "Đặt mua"
-                            function findOrderButton() {
-                                const btns = Array.from(document.querySelectorAll('#buy-btn, button'));
-                                return btns.find(btn => {
-                                    const text = btn.textContent.trim().toLowerCase();
-                                    return (text.includes('đặt mua') || text.includes('buy')) && btn.offsetParent !== null && !btn.disabled;
-                                });
-                            }
-                            // *** TÌM NÚT PAY CHÍNH XÁC ***
-                            function findPayButton() {
-                                // 1. Thử trực tiếp #buy-btn
-                                let btn = document.querySelector('#buy-btn');
-                                if (btn && btn.offsetParent !== null && !btn.disabled) {
-                                    const text = btn.textContent.trim().toLowerCase();
-                                    if (text === 'pay' || text.includes('pay')) return btn;
-                                }
-                                // 2. Thử qua class .pay-btn (div cha)
-                                const payDiv = document.querySelector('.pay-btn');
-                                if (payDiv) {
-                                    const innerBtn = payDiv.querySelector('button');
-                                    if (innerBtn && innerBtn.offsetParent !== null && !innerBtn.disabled) {
-                                        const text = innerBtn.textContent.trim().toLowerCase();
-                                        if (text === 'pay' || text.includes('pay')) return innerBtn;
-                                    }
-                                }
-                                // 3. Tìm button có text chính xác "Pay"
-                                const allBtns = Array.from(document.querySelectorAll('button'));
-                                const payBtn = allBtns.find(btn => {
-                                    const text = btn.textContent.trim().toLowerCase();
-                                    return text === 'pay' && btn.offsetParent !== null && !btn.disabled;
-                                });
-                                if (payBtn) return payBtn;
-                                // 4. Fallback: button chứa "pay"
-                                return allBtns.find(btn => {
-                                    const text = btn.textContent.trim().toLowerCase();
-                                    return text.includes('pay') && btn.offsetParent !== null && !btn.disabled;
-                                });
-                            }
-                            async function waitForPayButton(timeout) {
-                                const start = Date.now();
-                                while (Date.now() - start < timeout) {
-                                    const payBtn = findPayButton();
-                                    if (payBtn) {
-                                        addStep("Tìm thấy nút Pay", "THÀNH CÔNG", payBtn.outerHTML);
-                                        return payBtn;
-                                    }
-                                    await new Promise(r => setTimeout(r, 500));
-                                }
-                                throw new Error('Không tìm thấy nút Pay sau ' + timeout + 'ms');
-                            }
-                            function isFreeTrial(cardElement) {
-                                const text = cardElement.textContent.toLowerCase();
-                                return text.includes('free trial') || text.includes('hour') || text.includes('4-hour');
-                            }
-                            
-                            try {
-                                addStep("Bắt đầu", "INFO", "Chuẩn bị mua máy");
-                                if (!window.location.hash.includes('/dashboard')) {
-                                    window.location.hash = '#/dashboard/index';
-                                    await waitForHash('/dashboard', 10000);
-                                    await new Promise(r => setTimeout(r, 1000));
-                                }
-                                try {
-                                    const getBtn = await waitForElement('.get-btn', 5000);
-                                    if (getBtn) { getBtn.click(); await new Promise(r => setTimeout(r, 1000)); }
-                                } catch(e) { addStep("Get máy", "BỎ QUA", "Không có nút Get"); }
-                                if (!window.location.hash.includes('/purchaseDevice')) {
-                                    window.location.hash = '#/purchaseDevice';
-                                    await waitForHash('/purchaseDevice', 15000);
-                                }
-                                await waitForElement('.room-item', 15000);
-                                const allRooms = Array.from(document.querySelectorAll('.room-item'));
-                                const targetRoom = allRooms.find(r => r.textContent.includes(CONFIG.REGION));
-                                if (!targetRoom) throw new Error("Không tìm thấy vùng " + CONFIG.REGION);
-                                targetRoom.click();
-                                addStep("Chọn vùng", "THÀNH CÔNG", CONFIG.REGION);
-                                await new Promise(r => setTimeout(r, 500));
-                                
-                                await waitForElement('#active-card', 15000);
-                                const cards = Array.from(document.querySelectorAll('#active-card'));
-                                let targetCard = null;
-                                const vipCards = cards.filter(card => card.textContent.toLowerCase().includes('vip') && !isFreeTrial(card));
-                                if (vipCards.length > 0) {
-                                    const getDays = (text) => {
-                                        const match = text.match(/(\\d+)\\s*[Nn]gày|[Dd]ays?/);
-                                        if (match) return parseInt(match[1]);
-                                        const numMatch = text.match(/\\b(250|365|180|90|30)\\b/);
-                                        return numMatch ? parseInt(numMatch[1]) : 0;
-                                    };
-                                    vipCards.sort((a,b) => getDays(b.textContent) - getDays(a.textContent));
-                                    targetCard = vipCards[0];
-                                    addStep("Chọn gói VIP", "THÀNH CÔNG", targetCard.textContent.trim());
-                                } else {
-                                    const trialCards = cards.filter(isFreeTrial);
-                                    if (trialCards.length) {
-                                        targetCard = trialCards[0];
-                                        addStep("Chọn gói dùng thử", "THÀNH CÔNG", targetCard.textContent.trim());
-                                    } else {
-                                        targetCard = cards[0];
-                                        addStep("Chọn gói (fallback)", "THÀNH CÔNG", targetCard.textContent.trim());
-                                    }
-                                }
-                                if (!targetCard) throw new Error("Không có gói nào");
-                                const isTrial = isFreeTrial(targetCard);
-                                targetCard.click();
-                                await new Promise(r => setTimeout(r, 1500));
-                                
-                                await waitForElement('#buy-btn', 15000);
-                                const orderBtn = findOrderButton();
-                                if (orderBtn) orderBtn.click();
-                                else throw new Error("Không tìm thấy nút Đặt mua");
-                                addStep("Đặt mua", "THÀNH CÔNG");
-                                
-                                if (isTrial) {
-                                    addStep("Gói dùng thử", "INFO", "Không cần thanh toán, chờ chuyển trang...");
-                                    try {
-                                        await Promise.race([
-                                            waitForHash('/waiting', 30000),
-                                            waitForHash('/dashboard', 60000)
-                                        ]);
-                                        addStep("Hoàn tất (trial)", "THÀNH CÔNG", "Đã chuyển trang");
-                                    } catch(e) {
-                                        addStep("Hoàn tất (trial)", "WARN", "Không thấy hash, thử reload dashboard");
-                                        window.location.hash = '#/dashboard/index';
-                                        await waitForHash('/dashboard', 15000);
-                                    }
-                                    await new Promise(r => setTimeout(r, 3000));
-                                } else {
-                                    addStep("Chờ nút Pay", "INFO", "Đang tìm nút thanh toán...");
-                                    const payBtn = await waitForPayButton(30000);
-                                    addStep("Click nút Pay", "THÀNH CÔNG");
-                                    payBtn.click();
-                                    addStep("Nhấn thanh toán", "THÀNH CÔNG");
-                                    try {
-                                        await waitForHash('/waiting', 30000);
-                                        addStep("Chờ xử lý", "THÀNH CÔNG");
-                                    } catch(e) { addStep("Chờ waiting", "WARN", "Không thấy hash waiting"); }
-                                    try {
-                                        await waitForHash('/dashboard', 120000);
-                                        addStep("Hoàn tất", "THÀNH CÔNG");
-                                    } catch(e) { addStep("Hoàn tất", "WARN", "Không thấy dashboard nhưng có thể thành công"); }
-                                }
-                                addStep("MUA MÁY", "THÀNH CÔNG", "Đã mua/kích hoạt máy");
-                                return { success: true, stepLog };
-                            } catch(err) {
-                                addStep("MUA MÁY", "THẤT BẠI", err.message);
-                                return { success: false, error: err.message, stepLog };
-                            }
-                        })();
-                    \`;
-                };
-                
-                // Hàm mua máy trên tab mẹ (có timeout 120s)
                 async function runBuyOnParent(accountIndex) {
                     if (!window.opener) {
                         addLog("❌ Không có tab mẹ", true);
@@ -301,7 +342,7 @@
                         window.opener.localStorage.setItem('UGPHONE-Token', token);
                         window.opener.localStorage.setItem('UGPHONE-ID', loginId);
                         addLog("✅ Đã cập nhật token, chạy script mua máy...");
-                        const script = getBuyScript();
+                        const script = ${getBuyScript.toString()}();
                         const buyPromise = window.opener.eval(script);
                         const timeoutPromise = new Promise((_, reject) => {
                             setTimeout(() => reject(new Error("Timeout 120s khi mua máy")), 120000);
@@ -320,8 +361,9 @@
                     }
                 }
                 
-                // Hàm fetch VM với retry
-                async function fetchVMIdWithRetry(accessToken, loginId, fp, maxRetries = 5, delayMs = 3000, accIndex) {
+                async function fetchVMIdWithRetry(accessToken, loginId, fp, maxRetries, delayMs, accIndex) {
+                    maxRetries = maxRetries || 20;
+                    delayMs = delayMs || 5000;
                     for (let i = 0; i < maxRetries; i++) {
                         try {
                             const result = await fetchVMId(accessToken, loginId, fp, i === 0 ? 1000 : 0, accIndex);
@@ -334,8 +376,9 @@
                     }
                 }
                 
-                // ------------------- API -------------------
-                async function safeFetch(url, options, retries = 3, delay = 1000, accountIndex = -1) {
+                async function safeFetch(url, options, retries, delay, accountIndex) {
+                    retries = retries || 3;
+                    delay = delay || 1000;
                     for (let i = 0; i < retries; i++) {
                         try {
                             const response = await fetch(url, options);
@@ -425,7 +468,7 @@
                             const buySuccess = await runBuyOnParent(index);
                             if (buySuccess) {
                                 try {
-                                    const { vmId: newVm } = await fetchVMIdWithRetry(token, loginId, fp, 5, 3000, index);
+                                    const { vmId: newVm } = await fetchVMIdWithRetry(token, loginId, fp, 20, 5000, index);
                                     addLog(\`✅ Lấy được VM mới: \${newVm} cho \${loginId}\`);
                                     return { loginId, oldVm: null, newVm, isBlack: false, error: null };
                                 } catch (fetchErr) {
@@ -651,8 +694,7 @@
                 document.getElementById('closeBtn').onclick = () => window.close();
                 
                 loadStored();
-                addLog("✅ Tool Pro Smart đã sẵn sàng - Đã sửa lỗi click nút Pay.");
-                addLog("💡 Hỗ trợ gói dùng thử (free trial) và retry lấy VM sau khi mua.");
+                addLog("✅ Tool đã sẵn sàng - Đã sửa lỗi cú pháp.");
             })();
         <\/script>
         </body>
