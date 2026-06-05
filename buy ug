@@ -1,71 +1,207 @@
-// ==UserScript==
-// @name         UGPhone Auto Click 3 Buttons (Custom Selector)
-// @namespace    http://tampermonkey.net/
-// @version      10.0
-// @description  Kiểm tra 3 nút: "Đi nhận" (XPath), "Đặt mua" (XPath), "Thanh toán" (CSS: #buy-btn > div > span)
-// @match        https://www.ugphone.com/toc-portal/*
-// @grant        none
-// @run-at       document-idle
-// ==/UserScript==
-
 (async function() {
-    'use strict';
+  const CONFIG = {
+    REGION: 'Hong Kong',
+    CARD_TEXT: 'UVIP Hong Kong',
+    AUTO_PAY: true,
+    TIMEOUT: 30000,
+  };
 
-    // Định nghĩa các nút: mỗi nút có một hàm tìm riêng (selector hoặc XPath)
-    const buttons = [
-        {
-            name: 'Đi nhận',
-            find: () => document.evaluate(
-                "//div[contains(@class, 'get-btn') and contains(., 'Đi nhận')]",
-                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-            ).singleNodeValue
-        },
-        {
-            name: 'Đặt mua',
-            find: () => document.evaluate(
-                "//*[contains(text(), 'Đặt mua')]",
-                document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-            ).singleNodeValue
-        },
-        {
-            name: 'Thanh toán',
-            find: () => document.querySelector('#buy-btn > div > span') // CSS selector theo yêu cầu
-        }
-    ];
+  const stepLog = [];
+  function addStep(step, status, detail = '') {
+    stepLog.push({ Step: step, Status: status, Detail: detail });
+  }
 
-    // Hàm tìm nút đầu tiên xuất hiện
-    function findAnyButton() {
-        for (let btn of buttons) {
-            const el = btn.find();
-            if (el) return { el, name: btn.name };
+  function printTable(title, data) {
+    console.log(`%c${title}`, 'font-weight: bold; font-size: 14px; color: #0066cc;');
+    console.table(data);
+  }
+
+  function waitForElement(selector, timeout = CONFIG.TIMEOUT) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const check = () => {
+        const el = document.querySelector(selector);
+        if (el) return resolve(el);
+        if (Date.now() - start >= timeout) {
+          reject(new Error(`Timeout: không tìm thấy "${selector}" sau ${timeout}ms`));
+          return;
         }
-        return null;
+        requestAnimationFrame(check);
+      };
+      check();
+    });
+  }
+
+  function waitForHash(regex, timeout = CONFIG.TIMEOUT) {
+    return new Promise((resolve, reject) => {
+      if (regex.test(window.location.hash)) return resolve(window.location.hash);
+      let timer;
+      const onHashChange = () => {
+        if (regex.test(window.location.hash)) {
+          window.removeEventListener('hashchange', onHashChange);
+          clearTimeout(timer);
+          resolve(window.location.hash);
+        }
+      };
+      window.addEventListener('hashchange', onHashChange);
+      timer = setTimeout(() => {
+        window.removeEventListener('hashchange', onHashChange);
+        reject(new Error(`Timeout chờ URL khớp ${regex} sau ${timeout}ms`));
+      }, timeout);
+    });
+  }
+
+  function findButtonByText(keywords, requireVisible = true, requireEnabled = true) {
+    const btns = Array.from(document.querySelectorAll('#buy-btn'));
+    console.log(`🔍 Kiểm tra ${btns.length} nút #buy-btn:`);
+    btns.forEach((btn, i) => {
+      const visible = btn.offsetParent !== null;
+      const disabled = btn.disabled;
+      const text = btn.textContent.trim();
+      console.log(`  [${i}] "${text}" | visible=${visible} | disabled=${disabled}`);
+    });
+
+    const found = btns.find(btn => {
+      const text = btn.textContent.trim().toLowerCase();
+      const keywordMatch = keywords.some(k => text.includes(k.toLowerCase()));
+      const visible = !requireVisible || btn.offsetParent !== null;
+      const enabled = !requireEnabled || !btn.disabled;
+      return keywordMatch && visible && enabled;
+    });
+
+    if (!found) {
+      console.warn('⚠️ Không tìm thấy nút khớp. Từ khoá:', keywords,
+                   'Yêu cầu visible:', requireVisible, 'enabled:', requireEnabled);
+    }
+    return found;
+  }
+
+  async function waitForPayButton(timeout = CONFIG.TIMEOUT) {
+    console.log('⏳ Chờ nút Pay khả dụng (visible + không disabled)...');
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const payBtn = findButtonByText(['Thanh toán', 'pay'], true, true);
+      if (payBtn) {
+        console.log('✅ Đã thấy nút Pay:', payBtn.textContent.trim());
+        return payBtn;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    throw new Error('Không tìm thấy nút Pay khả dụng sau ' + timeout + 'ms');
+  }
+
+  async function clickGetButton() {
+    console.log('🟡 Bước 0: Kiểm tra nút "Get" trên Dashboard...');
+    if (!window.location.hash.includes('/dashboard')) {
+      window.location.hash = '#/dashboard/index';
+      await waitForHash(/\/dashboard/);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    try {
+      await waitForElement('.get-btn', 10000);
+      const getBtn = document.querySelector('.get-btn');
+      if (getBtn) {
+        console.log('✅ Tìm thấy nút Get, đang click...');
+        getBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        getBtn.click();
+        await new Promise(r => setTimeout(r, 1000));
+        addStep('0. Nhấn nút Get', '✅', 'Đã nhận trial (nếu có)');
+      }
+    } catch (e) {
+      console.log('ℹ️ Không thấy nút Get, bỏ qua.');
+      addStep('0. Nhấn nút Get', '⚠️ Bỏ qua', 'Không tìm thấy nút');
+    }
+  }
+
+  try {
+    printTable('⚙️ Cấu hình', [
+      { Key: 'REGION', Value: CONFIG.REGION },
+      { Key: 'CARD_TEXT', Value: CONFIG.CARD_TEXT },
+      { Key: 'AUTO_PAY', Value: CONFIG.AUTO_PAY ? 'YES (Tự động)' : 'NO (Hỏi)' },
+      { Key: 'TIMEOUT', Value: CONFIG.TIMEOUT + 'ms' },
+    ]);
+
+    await clickGetButton();
+
+    // Bước 1: Vào trang mua
+    if (!window.location.hash.includes('/purchaseDevice')) {
+      console.log('Bước 1: Chuyển đến purchaseDevice...');
+      window.location.hash = '#/purchaseDevice';
+      await waitForHash(/\/purchaseDevice/);
+    }
+    console.log('⏳ Đợi danh sách khu vực...');
+    await waitForElement('.room-item', CONFIG.TIMEOUT);
+    addStep('1. Vào trang mua', '✅');
+
+    // Bước 2: Chọn vùng
+    console.log(`Bước 2: Chọn vùng "${CONFIG.REGION}"...`);
+    const allRoomItems = Array.from(document.querySelectorAll('.room-item'));
+    const targetRoom = allRoomItems.find(item => item.textContent.includes(CONFIG.REGION));
+    if (!targetRoom) throw new Error(`Không tìm thấy vùng "${CONFIG.REGION}"`);
+    targetRoom.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetRoom.click();
+    await new Promise(r => setTimeout(r, 500));
+    addStep(`2. Chọn vùng ${CONFIG.REGION}`, '✅');
+
+    // Bước 3: Chọn gói cước
+    console.log(`Bước 3: Chọn gói "${CONFIG.CARD_TEXT}"...`);
+    await waitForElement('#active-card', CONFIG.TIMEOUT);
+    const cards = Array.from(document.querySelectorAll('#active-card'));
+    const targetCard = cards.find(card => card.textContent.includes(CONFIG.CARD_TEXT));
+    if (!targetCard) throw new Error(`Không tìm thấy gói "${CONFIG.CARD_TEXT}"`);
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetCard.click();
+    await new Promise(r => setTimeout(r, 1500));
+    addStep(`3. Chọn gói ${CONFIG.CARD_TEXT}`, '✅');
+
+    // Bước 4: Nhấn Đặt mua / Buy
+    console.log('Bước 4: Nhấn "Đặt mua" / "Buy"...');
+    await waitForElement('#buy-btn', CONFIG.TIMEOUT);
+    const orderBtn = findButtonByText(['Đặt mua', 'buy'], true, false);
+    if (!orderBtn) {
+      await new Promise(r => setTimeout(r, 2000));
+      const retry = findButtonByText(['Đặt mua', 'buy'], true, false);
+      if (!retry) throw new Error('Không tìm thấy nút Đặt mua/Buy');
+      retry.click();
+    } else {
+      orderBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      orderBtn.click();
+    }
+    addStep('4. Click Đặt mua/Buy', '✅');
+
+    // Bước 5: Chờ nút Pay khả dụng
+    console.log('Bước 5: Chờ nút Pay khả dụng...');
+    const payBtn = await waitForPayButton(CONFIG.TIMEOUT);
+    // Bước 6: Tự động click Pay (AUTO_PAY = true)
+    console.log('Bước 6: Tự động click Pay...');
+    payBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    payBtn.click();
+    addStep('5. Vào trang thanh toán', '✅');
+    addStep('6. Click Thanh toán/Pay', '✅');
+
+    // Bước 7: Chờ waiting – không throw lỗi nếu timeout
+    let orderId = 'N/A';
+    console.log('Bước 7: Chờ trang waiting (30s)...');
+    try {
+      await waitForHash(/\/waiting/, 30000);
+      orderId = new URLSearchParams(window.location.hash.split('?')[1]).get('order_id') || 'N/A';
+      addStep('7. Vào waiting', '✅', `Order: ${orderId}`);
+    } catch (e) {
+      addStep('7. Vào waiting', '⚠️ Không vào được waiting', 'Có thể đã thanh toán nhưng không redirect');
     }
 
-    async function clickButton(el, name) {
-        try {
-            el.click();
-            console.log(`[UGPhone] ✅ Đã click: "${name}"`);
-            await new Promise(r => setTimeout(r, 1000));
-            return true;
-        } catch (err) {
-            console.error(`[UGPhone] ❌ Lỗi click "${name}":`, err);
-            return false;
-        }
+    // Bước 8: Chờ dashboard – không bắt buộc
+    console.log('⏳ Đợi khởi tạo thiết bị (tối đa 2 phút)...');
+    try {
+      await waitForHash(/\/dashboard/, 120000);
+      addStep('8. Hoàn tất', '✅ Đã vào dashboard');
+    } catch (e) {
+      addStep('8. Hoàn tất', '⚠️ Timeout, nhưng thiết bị có thể đã được tạo');
     }
 
-    async function run() {
-        while (true) {
-            const found = findAnyButton();
-            if (found) {
-                await clickButton(found.el, found.name);
-                // Sau khi click, tiếp tục vòng lặp ngay (trang có thể đã chuyển)
-            } else {
-                console.log(`[UGPhone] ⏳ Không thấy nút nào, chờ 5 giây...`);
-                await new Promise(r => setTimeout(r, 5000));
-            }
-        }
-    }
-
-    run();
+  } catch (error) {
+    addStep('Lỗi', '❌ ' + error.message);
+  } finally {
+    printTable('📋 Kết quả từng bước', stepLog);
+  }
 })();
