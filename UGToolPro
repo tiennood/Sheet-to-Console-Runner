@@ -1,0 +1,664 @@
+(function() {
+    const popup = window.open("", "UGphoneToolPro", "width=800,height=600,resizable=yes,scrollbars=yes");
+    if (!popup) {
+        alert("Vui lòng cho phép popup trên trình duyệt!");
+        return;
+    }
+
+    const styles = `
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #1a1a1a; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
+        .tool-container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
+        .row { display: flex; gap: 10px; flex-wrap: wrap; }
+        textarea, button { font-family: monospace; font-size: 11px; }
+        textarea { background: #1e1e2f; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; resize: vertical; }
+        button { background: #2c2c3e; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); }
+        .btn-success { background: #10b981; }
+        .btn-warning { background: #f59e0b; }
+        .btn-primary { background: #3b82f6; }
+        .btn-danger { background: #ef4444; }
+        .btn-secondary { background: #6b7280; }
+        .btn-smart { background: #8b5cf6; }
+        .table-wrapper { flex: 1; overflow: auto; background: #0f0f1a; border-radius: 8px; border: 1px solid #2a2a3a; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #2a2a3a; }
+        th { background: #22223b; position: sticky; top: 0; }
+        .log-area { background: #0a0a12; border-radius: 8px; border: 1px solid #2a2a3a; padding: 6px; height: 120px; overflow: auto; font-family: monospace; font-size: 10px; }
+        .flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    `;
+
+    const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><title>UGphone Console Tool Pro - Smart (Fixed Pay)</title><style>${styles}</style></head>
+        <body>
+        <div class="tool-container">
+            <div class="flex"><strong>🔧 UGphone Console Tool Pro (Pop-up)</strong><button id="closeBtn" class="btn-danger" style="margin-left:auto;">✖ Đóng</button></div>
+            <div class="row">
+                <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON - Ví dụ:\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
+                <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID - Ví dụ:\n["VM123456", "VM789012"]'></textarea>
+            </div>
+            <div class="flex">
+                <button id="runSmartBtn" class="btn-smart">🚀 Chạy thông minh (auto mua/thay/bỏ qua)</button>
+                <button id="runReplacerBtn" class="btn-success">▶ Kiểm tra & thay VM (nếu black)</button>
+                <button id="buyCurrentBtn" class="btn-primary">🛒 Mua máy mới (chọn dòng)</button>
+                <button id="retryAllErrorsBtn" class="btn-warning">🔄 Retry tất cả lỗi</button>
+                <button id="exportCsvBtn" class="btn-secondary">📎 Xuất CSV</button>
+                <button id="clearTableBtn" class="btn-secondary">🗑 Xóa bảng</button>
+                <button id="saveJsonBtn" class="btn-secondary">💾 Lưu cấu hình</button>
+                <button id="saveResultsBtn" class="btn-secondary">💾 Lưu kết quả</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="resultTable">
+                    <thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Hành động</th><th>Mua máy</th></tr></thead>
+                    <tbody id="resultBody"></tbody>
+                </table>
+            </div>
+            <div class="log-area" id="logArea"></div>
+        </div>
+        <script>
+            (function(){
+                let lastAccounts = [];
+                let lastResults = [];
+                
+                function addLog(msg, isErr) {
+                    const logDiv = document.getElementById('logArea');
+                    if (!logDiv) return;
+                    const p = document.createElement('div');
+                    p.style.color = isErr ? '#ff9999' : '#aaffaa';
+                    p.innerText = new Date().toLocaleTimeString() + ' → ' + msg;
+                    logDiv.appendChild(p);
+                    p.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    while (logDiv.children.length > 100) logDiv.removeChild(logDiv.firstChild);
+                }
+                
+                function parseBlacklist(input) {
+                    input = input.trim();
+                    if (!input) return new Set();
+                    if (input.startsWith('[') && input.endsWith(']')) {
+                        try { const arr = JSON.parse(input); if (Array.isArray(arr)) return new Set(arr.map(v=>v.trim())); } catch(e) {}
+                    }
+                    return new Set(input.split(/[,\\s\\n]+/).filter(s=>s.trim()));
+                }
+                
+                // ------------------- SCRIPT MUA MÁY (ĐÃ SỬA LỖI PAY) -------------------
+                const getBuyScript = function() {
+                    return \`
+                        (async function() {
+                            const CONFIG = {
+                                REGION: 'Hong Kong',
+                                AUTO_PAY: true,
+                                TIMEOUT: 30000,
+                            };
+                            const stepLog = [];
+                            function addStep(step, status, detail) { 
+                                const msg = step + " - " + status + (detail ? ": " + detail : "");
+                                console.log("[UGphoneBuy] " + msg);
+                                stepLog.push({ Step: step, Status: status, Detail: detail || '' });
+                            }
+                            function waitForElement(selector, timeout) {
+                                return new Promise((resolve, reject) => {
+                                    const start = Date.now();
+                                    const check = () => {
+                                        const el = document.querySelector(selector);
+                                        if (el) return resolve(el);
+                                        if (Date.now() - start >= timeout) reject(new Error("Timeout: " + selector));
+                                        requestAnimationFrame(check);
+                                    };
+                                    check();
+                                });
+                            }
+                            function waitForHash(target, timeout) {
+                                return new Promise((resolve, reject) => {
+                                    if (window.location.hash.includes(target)) return resolve(window.location.hash);
+                                    const onHashChange = () => {
+                                        if (window.location.hash.includes(target)) {
+                                            window.removeEventListener('hashchange', onHashChange);
+                                            clearTimeout(timer);
+                                            resolve(window.location.hash);
+                                        }
+                                    };
+                                    window.addEventListener('hashchange', onHashChange);
+                                    const timer = setTimeout(() => {
+                                        window.removeEventListener('hashchange', onHashChange);
+                                        reject(new Error("Timeout waiting for hash: " + target));
+                                    }, timeout);
+                                });
+                            }
+                            // Tìm nút "Đặt mua"
+                            function findOrderButton() {
+                                const btns = Array.from(document.querySelectorAll('#buy-btn, button'));
+                                return btns.find(btn => {
+                                    const text = btn.textContent.trim().toLowerCase();
+                                    return (text.includes('đặt mua') || text.includes('buy')) && btn.offsetParent !== null && !btn.disabled;
+                                });
+                            }
+                            // *** TÌM NÚT PAY CHÍNH XÁC ***
+                            function findPayButton() {
+                                // 1. Thử trực tiếp #buy-btn
+                                let btn = document.querySelector('#buy-btn');
+                                if (btn && btn.offsetParent !== null && !btn.disabled) {
+                                    const text = btn.textContent.trim().toLowerCase();
+                                    if (text === 'pay' || text.includes('pay')) return btn;
+                                }
+                                // 2. Thử qua class .pay-btn (div cha)
+                                const payDiv = document.querySelector('.pay-btn');
+                                if (payDiv) {
+                                    const innerBtn = payDiv.querySelector('button');
+                                    if (innerBtn && innerBtn.offsetParent !== null && !innerBtn.disabled) {
+                                        const text = innerBtn.textContent.trim().toLowerCase();
+                                        if (text === 'pay' || text.includes('pay')) return innerBtn;
+                                    }
+                                }
+                                // 3. Tìm button có text chính xác "Pay"
+                                const allBtns = Array.from(document.querySelectorAll('button'));
+                                const payBtn = allBtns.find(btn => {
+                                    const text = btn.textContent.trim().toLowerCase();
+                                    return text === 'pay' && btn.offsetParent !== null && !btn.disabled;
+                                });
+                                if (payBtn) return payBtn;
+                                // 4. Fallback: button chứa "pay"
+                                return allBtns.find(btn => {
+                                    const text = btn.textContent.trim().toLowerCase();
+                                    return text.includes('pay') && btn.offsetParent !== null && !btn.disabled;
+                                });
+                            }
+                            async function waitForPayButton(timeout) {
+                                const start = Date.now();
+                                while (Date.now() - start < timeout) {
+                                    const payBtn = findPayButton();
+                                    if (payBtn) {
+                                        addStep("Tìm thấy nút Pay", "THÀNH CÔNG", payBtn.outerHTML);
+                                        return payBtn;
+                                    }
+                                    await new Promise(r => setTimeout(r, 500));
+                                }
+                                throw new Error('Không tìm thấy nút Pay sau ' + timeout + 'ms');
+                            }
+                            function isFreeTrial(cardElement) {
+                                const text = cardElement.textContent.toLowerCase();
+                                return text.includes('free trial') || text.includes('hour') || text.includes('4-hour');
+                            }
+                            
+                            try {
+                                addStep("Bắt đầu", "INFO", "Chuẩn bị mua máy");
+                                if (!window.location.hash.includes('/dashboard')) {
+                                    window.location.hash = '#/dashboard/index';
+                                    await waitForHash('/dashboard', 10000);
+                                    await new Promise(r => setTimeout(r, 1000));
+                                }
+                                try {
+                                    const getBtn = await waitForElement('.get-btn', 5000);
+                                    if (getBtn) { getBtn.click(); await new Promise(r => setTimeout(r, 1000)); }
+                                } catch(e) { addStep("Get máy", "BỎ QUA", "Không có nút Get"); }
+                                if (!window.location.hash.includes('/purchaseDevice')) {
+                                    window.location.hash = '#/purchaseDevice';
+                                    await waitForHash('/purchaseDevice', 15000);
+                                }
+                                await waitForElement('.room-item', 15000);
+                                const allRooms = Array.from(document.querySelectorAll('.room-item'));
+                                const targetRoom = allRooms.find(r => r.textContent.includes(CONFIG.REGION));
+                                if (!targetRoom) throw new Error("Không tìm thấy vùng " + CONFIG.REGION);
+                                targetRoom.click();
+                                addStep("Chọn vùng", "THÀNH CÔNG", CONFIG.REGION);
+                                await new Promise(r => setTimeout(r, 500));
+                                
+                                await waitForElement('#active-card', 15000);
+                                const cards = Array.from(document.querySelectorAll('#active-card'));
+                                let targetCard = null;
+                                const vipCards = cards.filter(card => card.textContent.toLowerCase().includes('vip') && !isFreeTrial(card));
+                                if (vipCards.length > 0) {
+                                    const getDays = (text) => {
+                                        const match = text.match(/(\\d+)\\s*[Nn]gày|[Dd]ays?/);
+                                        if (match) return parseInt(match[1]);
+                                        const numMatch = text.match(/\\b(250|365|180|90|30)\\b/);
+                                        return numMatch ? parseInt(numMatch[1]) : 0;
+                                    };
+                                    vipCards.sort((a,b) => getDays(b.textContent) - getDays(a.textContent));
+                                    targetCard = vipCards[0];
+                                    addStep("Chọn gói VIP", "THÀNH CÔNG", targetCard.textContent.trim());
+                                } else {
+                                    const trialCards = cards.filter(isFreeTrial);
+                                    if (trialCards.length) {
+                                        targetCard = trialCards[0];
+                                        addStep("Chọn gói dùng thử", "THÀNH CÔNG", targetCard.textContent.trim());
+                                    } else {
+                                        targetCard = cards[0];
+                                        addStep("Chọn gói (fallback)", "THÀNH CÔNG", targetCard.textContent.trim());
+                                    }
+                                }
+                                if (!targetCard) throw new Error("Không có gói nào");
+                                const isTrial = isFreeTrial(targetCard);
+                                targetCard.click();
+                                await new Promise(r => setTimeout(r, 1500));
+                                
+                                await waitForElement('#buy-btn', 15000);
+                                const orderBtn = findOrderButton();
+                                if (orderBtn) orderBtn.click();
+                                else throw new Error("Không tìm thấy nút Đặt mua");
+                                addStep("Đặt mua", "THÀNH CÔNG");
+                                
+                                if (isTrial) {
+                                    addStep("Gói dùng thử", "INFO", "Không cần thanh toán, chờ chuyển trang...");
+                                    try {
+                                        await Promise.race([
+                                            waitForHash('/waiting', 30000),
+                                            waitForHash('/dashboard', 60000)
+                                        ]);
+                                        addStep("Hoàn tất (trial)", "THÀNH CÔNG", "Đã chuyển trang");
+                                    } catch(e) {
+                                        addStep("Hoàn tất (trial)", "WARN", "Không thấy hash, thử reload dashboard");
+                                        window.location.hash = '#/dashboard/index';
+                                        await waitForHash('/dashboard', 15000);
+                                    }
+                                    await new Promise(r => setTimeout(r, 3000));
+                                } else {
+                                    addStep("Chờ nút Pay", "INFO", "Đang tìm nút thanh toán...");
+                                    const payBtn = await waitForPayButton(30000);
+                                    addStep("Click nút Pay", "THÀNH CÔNG");
+                                    payBtn.click();
+                                    addStep("Nhấn thanh toán", "THÀNH CÔNG");
+                                    try {
+                                        await waitForHash('/waiting', 30000);
+                                        addStep("Chờ xử lý", "THÀNH CÔNG");
+                                    } catch(e) { addStep("Chờ waiting", "WARN", "Không thấy hash waiting"); }
+                                    try {
+                                        await waitForHash('/dashboard', 120000);
+                                        addStep("Hoàn tất", "THÀNH CÔNG");
+                                    } catch(e) { addStep("Hoàn tất", "WARN", "Không thấy dashboard nhưng có thể thành công"); }
+                                }
+                                addStep("MUA MÁY", "THÀNH CÔNG", "Đã mua/kích hoạt máy");
+                                return { success: true, stepLog };
+                            } catch(err) {
+                                addStep("MUA MÁY", "THẤT BẠI", err.message);
+                                return { success: false, error: err.message, stepLog };
+                            }
+                        })();
+                    \`;
+                };
+                
+                // Hàm mua máy trên tab mẹ (có timeout 120s)
+                async function runBuyOnParent(accountIndex) {
+                    if (!window.opener) {
+                        addLog("❌ Không có tab mẹ", true);
+                        return false;
+                    }
+                    const acc = lastAccounts[accountIndex];
+                    if (!acc) {
+                        addLog("❌ Không tìm thấy tài khoản", true);
+                        return false;
+                    }
+                    const token = acc['UGPHONE-Token'] || acc['accessToken'];
+                    const loginId = acc['UGPHONE-ID'] || acc['loginId'];
+                    if (!token || !loginId) {
+                        addLog("❌ Thiếu token/loginId", true);
+                        return false;
+                    }
+                    addLog(\`🛒 Đăng nhập \${loginId} và mua máy...\`);
+                    window.opener.focus();
+                    try {
+                        window.opener.localStorage.setItem('UGPHONE-Token', token);
+                        window.opener.localStorage.setItem('UGPHONE-ID', loginId);
+                        addLog("✅ Đã cập nhật token, chạy script mua máy...");
+                        const script = getBuyScript();
+                        const buyPromise = window.opener.eval(script);
+                        const timeoutPromise = new Promise((_, reject) => {
+                            setTimeout(() => reject(new Error("Timeout 120s khi mua máy")), 120000);
+                        });
+                        const result = await Promise.race([buyPromise, timeoutPromise]);
+                        if (result && result.success) {
+                            addLog(\`✅ Mua máy thành công cho \${loginId}\`);
+                            return true;
+                        } else {
+                            addLog(\`❌ Mua máy thất bại: \${result?.error || 'Lỗi không xác định'}\`, true);
+                            return false;
+                        }
+                    } catch(err) {
+                        addLog(\`❌ Lỗi mua máy: \${err.message}\`, true);
+                        return false;
+                    }
+                }
+                
+                // Hàm fetch VM với retry
+                async function fetchVMIdWithRetry(accessToken, loginId, fp, maxRetries = 5, delayMs = 3000, accIndex) {
+                    for (let i = 0; i < maxRetries; i++) {
+                        try {
+                            const result = await fetchVMId(accessToken, loginId, fp, i === 0 ? 1000 : 0, accIndex);
+                            return result;
+                        } catch(err) {
+                            addLog(\`⚠️ Lấy VM lần \${i+1}/\${maxRetries} thất bại: \${err.message}\`, true);
+                            if (i === maxRetries-1) throw err;
+                            await new Promise(r => setTimeout(r, delayMs));
+                        }
+                    }
+                }
+                
+                // ------------------- API -------------------
+                async function safeFetch(url, options, retries = 3, delay = 1000, accountIndex = -1) {
+                    for (let i = 0; i < retries; i++) {
+                        try {
+                            const response = await fetch(url, options);
+                            if (!response.ok) {
+                                if (response.status === 403) throw new Error("HTTP 403: Token hết hạn");
+                                else throw new Error(\`HTTP \${response.status}\`);
+                            }
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('application/json')) return await response.json();
+                            else {
+                                const text = await response.text();
+                                if (text.includes('<!DOCTYPE')) throw new Error("Server trả về HTML");
+                                throw new Error("Response không phải JSON");
+                            }
+                        } catch(err) {
+                            if (err.message.includes('403')) throw err;
+                            if (i === retries-1) throw err;
+                            await new Promise(r => setTimeout(r, delay));
+                        }
+                    }
+                }
+                
+                async function fetchVMId(accessToken, loginId, fp, delay, accIndex) {
+                    if (delay) await new Promise(r=>setTimeout(r, delay));
+                    const headers = {
+                        "accept":"application/json","content-type":"application/json;charset=UTF-8",
+                        "access-token":accessToken,"login-id":loginId,
+                        "web-fingerprint":fp||"0742f9ecfe480939f8d215d6db7ebedf",
+                        "terminal":"web","lang":"vi","update-date":Date.now()
+                    };
+                    const listData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
+                        method:"POST", headers, body:JSON.stringify({tab:"complete_record",page:1,limit:10}), credentials:"include"
+                    }, 3, 1000, accIndex);
+                    if (listData.code !== 200) throw new Error("Lỗi list: " + listData.msg);
+                    if (!listData.data.list.length) throw new Error("Chưa có VM");
+                    const orderId = listData.data.list[0].order_id;
+                    const statusData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
+                        method:"POST", headers, body:JSON.stringify({order_id:orderId}), credentials:"include"
+                    }, 3, 1000, accIndex);
+                    if (statusData.code !== 200) throw new Error("Lỗi status: " + statusData.msg);
+                    const serviceIds = statusData.data.service_ids;
+                    if (!serviceIds.length) throw new Error("Không có service_ids");
+                    const snapData = await safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
+                        method:"POST", headers, body:JSON.stringify({service_ids:serviceIds}), credentials:"include"
+                    }, 3, 1000, accIndex);
+                    if (snapData.code !== 200) throw new Error("Lỗi snapshot: " + snapData.msg);
+                    const vmId = snapData.data.list[0].snapshot.split('/').pop().split('.')[0];
+                    return { vmId, serviceId: serviceIds[0] };
+                }
+                
+                async function replaceDevice(accessToken, loginId, fp, serviceId, reasonId, delay, accIndex) {
+                    if (delay) await new Promise(r=>setTimeout(r, delay));
+                    const headers = {
+                        "accept":"application/json","content-type":"application/json;charset=UTF-8",
+                        "access-token":accessToken,"login-id":loginId,
+                        "web-fingerprint":fp||"0742f9ecfe480939f8d215d6db7ebedf",
+                        "terminal":"web","lang":"vi","update-date":Date.now()
+                    };
+                    const data = await safeFetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
+                        method:"POST", headers, body:JSON.stringify({service_id:serviceId, replace_reason:reasonId, reason:""}), credentials:"include"
+                    }, 3, 1000, accIndex);
+                    if (data.code !== 200) throw new Error("Replace thất bại: " + data.msg);
+                    return data;
+                }
+                
+                async function processAccount(account, index, blackSet, reasonId, autoBuyIfNoVM) {
+                    let token = account['UGPHONE-Token'] || account['accessToken'];
+                    const loginId = account['UGPHONE-ID'] || account['loginId'];
+                    const fp = account['ugBrowserId'] || account['web-fingerprint'];
+                    if (!token || !loginId) return { loginId: loginId || ("Acc"+(index+1)), error: "Thiếu token hoặc loginId" };
+                    try {
+                        const { vmId, serviceId } = await fetchVMId(token, loginId, fp, 1000, index);
+                        const isBlack = blackSet.has(vmId);
+                        if (isBlack) {
+                            addLog(\`⚫ VM \${vmId} bị black, replace...\`);
+                            await replaceDevice(token, loginId, fp, serviceId, reasonId, 2000, index);
+                            await new Promise(r=>setTimeout(r, 2000));
+                            const { vmId: newVm } = await fetchVMId(token, loginId, fp, 1000, index);
+                            return { loginId, oldVm: vmId, newVm, isBlack: true, error: null };
+                        } else {
+                            return { loginId, oldVm: vmId, newVm: vmId, isBlack: false, error: null };
+                        }
+                    } catch (err) {
+                        const noVmError = err.message.includes('chưa có VM') || err.message.includes('Chưa có VM');
+                        if (autoBuyIfNoVM && noVmError) {
+                            addLog(\`🔄 Tài khoản \${loginId} chưa có VM, tiến hành mua...\`);
+                            const buySuccess = await runBuyOnParent(index);
+                            if (buySuccess) {
+                                try {
+                                    const { vmId: newVm } = await fetchVMIdWithRetry(token, loginId, fp, 5, 3000, index);
+                                    addLog(\`✅ Lấy được VM mới: \${newVm} cho \${loginId}\`);
+                                    return { loginId, oldVm: null, newVm, isBlack: false, error: null };
+                                } catch (fetchErr) {
+                                    addLog(\`❌ Không lấy được VM sau khi mua: \${fetchErr.message}\`, true);
+                                    return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Đã mua máy nhưng không lấy được VM" };
+                                }
+                            } else {
+                                return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Mua máy tự động thất bại" };
+                            }
+                        }
+                        return { loginId, oldVm: null, newVm: null, isBlack: false, error: err.message };
+                    }
+                }
+                
+                async function runSmart() {
+                    const jsonText = document.getElementById('jsonInput').value.trim();
+                    const blacklistText = document.getElementById('blacklistInput').value.trim();
+                    if (!jsonText) return alert("Nhập JSON");
+                    let accounts = [];
+                    try {
+                        let parsed = JSON.parse(jsonText);
+                        if (Array.isArray(parsed)) accounts = parsed;
+                        else accounts = jsonText.split(/\\r?\\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
+                    } catch(e) {
+                        const lines = jsonText.split(/\\r?\\n/);
+                        for (let line of lines) if(line.trim()) accounts.push(JSON.parse(line));
+                    }
+                    if (!accounts.length) return alert("Không có tài khoản");
+                    lastAccounts = accounts;
+                    const blackSet = parseBlacklist(blacklistText);
+                    const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                    lastResults = [];
+                    renderResults();
+                    for (let i = 0; i < accounts.length; i++) {
+                        addLog(\`🚀 Xử lý \${i+1}/\${accounts.length}: \${accounts[i]['UGPHONE-ID'] || accounts[i]['loginId']}\`);
+                        const result = await processAccount(accounts[i], i, blackSet, reasonId, true);
+                        lastResults.push(result);
+                        renderResults();
+                        if (result.error) addLog(\`⚠️ Lỗi: \${result.error}\`, true);
+                        else addLog(\`✅ VM: \${result.newVm} \${result.isBlack ? '(đã thay)' : '(giữ nguyên)'}\`);
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                    addLog("🎉 Hoàn tất xử lý " + accounts.length + " tài khoản.");
+                    localStorage.setItem('ugphone_console_json_popup', jsonText);
+                    localStorage.setItem('ugphone_console_black_popup', blacklistText);
+                    localStorage.setItem('ugphone_last_results_popup', JSON.stringify(lastResults));
+                    localStorage.setItem('ugphone_last_accounts_popup', JSON.stringify(lastAccounts));
+                }
+                
+                async function runReplacer() {
+                    const jsonText = document.getElementById('jsonInput').value.trim();
+                    const blacklistText = document.getElementById('blacklistInput').value.trim();
+                    if (!jsonText) return alert("Nhập JSON");
+                    let accounts = [];
+                    try {
+                        let parsed = JSON.parse(jsonText);
+                        if (Array.isArray(parsed)) accounts = parsed;
+                        else accounts = jsonText.split(/\\r?\\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
+                    } catch(e) {
+                        const lines = jsonText.split(/\\r?\\n/);
+                        for (let line of lines) if(line.trim()) accounts.push(JSON.parse(line));
+                    }
+                    if (!accounts.length) return alert("Không có tài khoản");
+                    lastAccounts = accounts;
+                    const blackSet = parseBlacklist(blacklistText);
+                    const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                    lastResults = [];
+                    for (let i=0; i<accounts.length; i++) {
+                        addLog("🔍 Xử lý " + (i+1) + "/" + accounts.length + ": " + (accounts[i]['UGPHONE-ID'] || accounts[i]['loginId']));
+                        const result = await processAccount(accounts[i], i, blackSet, reasonId, false);
+                        lastResults.push(result);
+                        renderResults();
+                        await new Promise(r=>setTimeout(r, 2000));
+                    }
+                    addLog("🎉 Hoàn tất kiểm tra.");
+                    localStorage.setItem('ugphone_console_json_popup', jsonText);
+                    localStorage.setItem('ugphone_console_black_popup', blacklistText);
+                }
+                
+                async function retryAllErrors() {
+                    const errorIndices = [];
+                    for (let i=0; i<lastResults.length; i++) if (lastResults[i].error) errorIndices.push(i);
+                    if (errorIndices.length === 0) { addLog("Không có lỗi để retry"); return; }
+                    addLog("🔄 Retry " + errorIndices.length + " tài khoản...");
+                    const blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
+                    const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                    for (let idx of errorIndices) {
+                        const acc = lastAccounts[idx];
+                        if (!acc) continue;
+                        addLog("⏳ Retry " + (acc['UGPHONE-ID'] || acc['loginId']));
+                        const force = lastResults[idx].error && (lastResults[idx].error.includes('chưa có VM') || lastResults[idx].error.includes('Chưa có VM'));
+                        const newResult = await processAccount(acc, idx, blackSet, reasonId, force);
+                        lastResults[idx] = newResult;
+                        renderResults();
+                        await new Promise(r=>setTimeout(r, 2000));
+                    }
+                    addLog("✅ Hoàn tất retry.");
+                }
+                
+                async function manualBuy() {
+                    if (!lastAccounts.length) { addLog("❌ Không có tài khoản", true); return; }
+                    await runBuyOnParent(0);
+                    const blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
+                    const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                    const newResult = await processAccount(lastAccounts[0], 0, blackSet, reasonId, false);
+                    lastResults[0] = newResult;
+                    renderResults();
+                }
+                
+                function exportCSV() {
+                    let csv = "STT,Login ID,VM cũ,Blacklist?,VM mới,Lỗi\\n";
+                    for (let i=0; i<lastResults.length; i++) {
+                        const r = lastResults[i];
+                        csv += (i+1) + "," + (r.loginId||'') + "," + (r.oldVm||'') + "," + (r.isBlack?'Có':'Không') + "," + (r.newVm||'') + "," + (r.error||'') + "\\n";
+                    }
+                    const blob = new Blob([csv], {type:"text/csv"});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = "ugphone_" + Date.now() + ".csv";
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                }
+                
+                function clearTable() { lastResults = []; lastAccounts = []; renderResults(); addLog("Đã xóa bảng"); }
+                function saveJson() {
+                    const json = document.getElementById('jsonInput').value.trim();
+                    const black = document.getElementById('blacklistInput').value.trim();
+                    if (json) localStorage.setItem('ugphone_console_json_popup', json);
+                    localStorage.setItem('ugphone_console_black_popup', black);
+                    addLog("✅ Đã lưu cấu hình");
+                }
+                function saveResults() {
+                    localStorage.setItem('ugphone_last_results_popup', JSON.stringify(lastResults));
+                    localStorage.setItem('ugphone_last_accounts_popup', JSON.stringify(lastAccounts));
+                    addLog("💾 Đã lưu kết quả");
+                }
+                function loadStored() {
+                    const json = localStorage.getItem('ugphone_console_json_popup');
+                    if (json) document.getElementById('jsonInput').value = json;
+                    const black = localStorage.getItem('ugphone_console_black_popup');
+                    if (black) document.getElementById('blacklistInput').value = black;
+                    const savedResults = localStorage.getItem('ugphone_last_results_popup');
+                    if (savedResults) {
+                        try {
+                            lastResults = JSON.parse(savedResults);
+                            lastAccounts = JSON.parse(localStorage.getItem('ugphone_last_accounts_popup') || '[]');
+                            renderResults();
+                            addLog("📂 Đã tải lại " + lastResults.length + " kết quả cũ");
+                        } catch(e) {}
+                    }
+                }
+                
+                function renderResults() {
+                    const tbody = document.getElementById('resultBody');
+                    if (!tbody) return;
+                    tbody.innerHTML = '';
+                    for (let i = 0; i < lastResults.length; i++) {
+                        const r = lastResults[i];
+                        const row = tbody.insertRow();
+                        row.insertCell(0).innerText = i+1;
+                        row.insertCell(1).innerText = r.loginId || '?';
+                        row.insertCell(2).innerText = r.oldVm || '';
+                        row.insertCell(3).innerText = r.isBlack ? 'Có' : (r.error ? '-' : 'Không');
+                        row.insertCell(4).innerText = r.newVm || '';
+                        row.insertCell(5).innerText = r.error || '';
+                        const actionCell = row.insertCell(6);
+                        if (r.error) {
+                            const retryBtn = document.createElement('button');
+                            retryBtn.innerText = '🔄 Retry';
+                            retryBtn.style.cssText = 'background:#f59e0b; border:none; color:white; padding:2px 6px; margin-right:4px;';
+                            retryBtn.onclick = (function(idx) { return async function() {
+                                addLog("⏳ Retry " + r.loginId);
+                                const acc = lastAccounts.find(a => (a['UGPHONE-ID']||a['loginId']) === r.loginId);
+                                if (!acc) { addLog("❌ Không tìm thấy dữ liệu gốc", true); return; }
+                                const blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
+                                const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                                const force = r.error && (r.error.includes('chưa có VM') || r.error.includes('Chưa có VM'));
+                                const newResult = await processAccount(acc, idx, blackSet, reasonId, force);
+                                lastResults[idx] = newResult;
+                                renderResults();
+                                addLog("✅ Đã retry " + r.loginId);
+                            }})(i);
+                            actionCell.appendChild(retryBtn);
+                            const delBtn = document.createElement('button');
+                            delBtn.innerText = '🗑️';
+                            delBtn.style.cssText = 'background:#ef4444; border:none; color:white; padding:2px 6px;';
+                            delBtn.onclick = (function(idx) { return function() {
+                                lastResults.splice(idx, 1);
+                                lastAccounts.splice(idx, 1);
+                                renderResults();
+                                addLog("🗑️ Đã xóa dòng " + (idx+1));
+                            }})(i);
+                            actionCell.appendChild(delBtn);
+                        } else {
+                            actionCell.innerText = '✓';
+                        }
+                        const buyCell = row.insertCell(7);
+                        const buyBtn = document.createElement('button');
+                        buyBtn.innerText = '🛒 Mua';
+                        buyBtn.style.cssText = 'background:#3b82f6; border:none; color:white; padding:2px 6px;';
+                        buyBtn.onclick = (function(accIdx) { return async function() {
+                            await runBuyOnParent(accIdx);
+                            const blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
+                            const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+                            const newResult = await processAccount(lastAccounts[accIdx], accIdx, blackSet, reasonId, false);
+                            lastResults[accIdx] = newResult;
+                            renderResults();
+                        }})(i);
+                        buyCell.appendChild(buyBtn);
+                    }
+                    localStorage.setItem('ugphone_last_results_popup', JSON.stringify(lastResults));
+                    localStorage.setItem('ugphone_last_accounts_popup', JSON.stringify(lastAccounts));
+                }
+                
+                document.getElementById('runSmartBtn').onclick = runSmart;
+                document.getElementById('runReplacerBtn').onclick = runReplacer;
+                document.getElementById('buyCurrentBtn').onclick = manualBuy;
+                document.getElementById('retryAllErrorsBtn').onclick = retryAllErrors;
+                document.getElementById('exportCsvBtn').onclick = exportCSV;
+                document.getElementById('clearTableBtn').onclick = clearTable;
+                document.getElementById('saveJsonBtn').onclick = saveJson;
+                document.getElementById('saveResultsBtn').onclick = saveResults;
+                document.getElementById('closeBtn').onclick = () => window.close();
+                
+                loadStored();
+                addLog("✅ Tool Pro Smart đã sẵn sàng - Đã sửa lỗi click nút Pay.");
+                addLog("💡 Hỗ trợ gói dùng thử (free trial) và retry lấy VM sau khi mua.");
+            })();
+        <\/script>
+        </body>
+        </html>
+    `;
+
+    popup.document.write(html);
+    popup.document.close();
+})();
