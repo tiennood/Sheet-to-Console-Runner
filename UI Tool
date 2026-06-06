@@ -86,8 +86,9 @@
     body{margin:0;background:#1a1a1a;color:#eee;font-family:Segoe UI,sans-serif;font-size:12px;height:100vh;overflow:hidden}
     .container{display:flex;flex-direction:column;height:100%;padding:15px;gap:10px}
     .row{display:flex;gap:10px;flex-wrap:wrap}
-    textarea,button{font-family:monospace;font-size:11px}
+    textarea,button,input{font-family:monospace;font-size:11px}
     textarea{background:#1e1e2f;color:#eee;border:1px solid #444;border-radius:6px;padding:8px;width:100%}
+    input{background:#1e1e2f;color:#eee;border:1px solid #444;border-radius:6px;padding:6px;width:100%}
     button{background:#2c2c3e;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer}
     button:hover{filter:brightness(1.1)}
     .btn-success{background:#10b981}
@@ -108,6 +109,16 @@
         <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON (mỗi dòng một object hoặc mảng):\\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
         <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID (cách nhau dấu phẩy hoặc xuống dòng):\\nVM123456, VM789012'></textarea>
     </div>
+    <div class="flex" style="background:#22223b; padding:10px; border-radius:8px; border:1px solid #3d3d5c; justify-content:space-between; width:100%;">
+        <div class="flex">
+            <span style="font-weight:bold; color:#10b981; font-size:11px;">➕ THÊM TÀI KHOẢN:</span>
+            <input id="addId" type="text" placeholder="UGPHONE-ID (Login ID)" style="width:130px; font-size:11px;" />
+            <input id="addToken" type="text" placeholder="UGPHONE-Token" style="width:250px; font-size:11px;" />
+            <input id="addFp" type="text" placeholder="Fingerprint (tùy chọn)" style="width:130px; font-size:11px;" />
+            <button id="addAccBtn" class="btn-success" style="padding:5px 12px; font-weight:bold;">➕ Thêm dòng</button>
+        </div>
+        <button id="overwriteBtn" class="btn-primary" style="padding:5px 12px; font-weight:bold; background:#a855f7;">✍️ Ghi đè vào Ô nhập</button>
+    </div>
     <div class="flex">
         <button id="runBtn" class="btn-success">▶ Kiểm tra & thay VM</button>
         <button id="buyBtn" class="btn-primary">🛒 Auto Mua Lỗi (Chạy loạt)</button>
@@ -119,7 +130,7 @@
     </div>
     <div class="table-wrapper">
         <table id="resultTable">
-            <thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Mua máy</th></tr></thead>
+            <thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th style="width:230px;">Hành động</th></tr></thead>
             <tbody id="resultBody"></tbody>
         </table>
     </div>
@@ -585,17 +596,62 @@
             row.insertCell(3).innerText = r.isBlack ? 'Có' : (r.error ? '-' : 'Không');
             row.insertCell(4).innerText = r.newVm || '';
             row.insertCell(5).innerText = r.error || '';
-            const buyCell = row.insertCell(6);
-            const btn = document.createElement('button');
-            btn.innerText = '🛒 Mua';
-            btn.style.cssText = 'background:#3b82f6; border:none; color:white; padding:2px 6px;';
-            btn.onclick = (async (idx) => {
-                if (isRunning) { addLog("Đang chạy, hãy dừng trước", true); return; }
+            const actionCell = row.insertCell(6);
+            actionCell.className = "flex";
+            actionCell.style.cssText = "display:flex; gap:4px; align-items:center;";
+
+            // Nút "Cập nhật" riêng lẻ
+            const updateBtn = document.createElement('button');
+            updateBtn.innerHTML = '🔄 Cập nhật';
+            updateBtn.style.cssText = 'background:#10b981; border:none; color:white; padding:2px 6px; font-size:10px; border-radius:4px; margin-right:2px;';
+            updateBtn.onclick = (async (idx) => {
+                if (isRunning) { addLog("Đang chạy hàng loạt, hãy dừng trước", true); return; }
                 const acc = lastAccounts[idx];
                 if (!acc) return;
+                updateBtn.innerText = '🔄 Chờ...';
+                updateBtn.disabled = true;
+                addLog(`⏳ Đang cập nhật riêng lẻ cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
+                blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
+                try {
+                    const res = await processAccount(acc, idx, false);
+                    lastResults[idx] = res;
+                    addLog(`✅ Cập nhật riêng lẻ thành công cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
+                } catch(e) {
+                    lastResults[idx] = { loginId: acc['UGPHONE-ID'] || acc.loginId, error: e.message };
+                    addLog(`❌ Lỗi cập nhật cho ` + (acc['UGPHONE-ID'] || acc.loginId) + `: ` + e.message, true);
+                }
+                renderResults();
+            }).bind(null, i);
+
+            // Nút "Mua máy" riêng lẻ
+            const buyBtn = document.createElement('button');
+            buyBtn.innerHTML = '🛒 Mua';
+            buyBtn.style.cssText = 'background:#3b82f6; border:none; color:white; padding:2px 6px; font-size:10px; border-radius:4px; margin-right:2px;';
+            buyBtn.onclick = (async (idx) => {
+                if (isRunning) { addLog("Đang chạy hàng loạt, hãy dừng trước", true); return; }
+                const acc = lastAccounts[idx];
+                if (!acc) return;
+                addLog(`🛒 Kích hoạt tiến trình Mua máy cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
                 await automateLoginAndBuyInParent(acc);
             }).bind(null, i);
-            buyCell.appendChild(btn);
+
+            // Nút "Xóa" riêng lẻ
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '❌ Xóa';
+            deleteBtn.style.cssText = 'background:#ef4444; border:none; color:white; padding:2px 6px; font-size:10px; border-radius:4px;';
+            deleteBtn.onclick = ((idx) => {
+                const targetId = lastAccounts[idx] ? (lastAccounts[idx]['UGPHONE-ID'] || lastAccounts[idx].loginId) : '?';
+                if (confirm(`Bạn có chắc muốn xóa tài khoản "${targetId}" khỏi bảng danh sách này không?`)) {
+                    lastAccounts.splice(idx, 1);
+                    lastResults.splice(idx, 1);
+                    renderResults();
+                    addLog(`❌ Đã xóa dòng tài khoản: ` + targetId);
+                }
+            }).bind(null, i);
+
+            actionCell.appendChild(updateBtn);
+            actionCell.appendChild(buyBtn);
+            actionCell.appendChild(deleteBtn);
         }
         saveResults();
     }
@@ -614,6 +670,14 @@
         localStorage.setItem('ug_tool_accounts', JSON.stringify(lastAccounts));
         localStorage.setItem('ugphone_last_results_popup', JSON.stringify(lastResults));
         localStorage.setItem('ugphone_last_accounts_popup', JSON.stringify(lastAccounts));
+    }
+    function syncAccountsToTextarea() {
+        const jsonInput = document.getElementById('jsonInput');
+        if (jsonInput) {
+            jsonInput.value = JSON.stringify(lastAccounts, null, 2);
+            saveConfig();
+            addLog("✍️ Đã cập nhật & ghi đè danh sách tài khoản hiện tại vào ô cấu hình nhập");
+        }
     }
     function loadLocal() {
         let json = localStorage.getItem('ug_tool_json');
@@ -645,9 +709,9 @@
         try {
             let parsed = JSON.parse(jsonText);
             if (Array.isArray(parsed)) accounts = parsed;
-            else accounts = jsonText.split(/\\r?\\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
+            else accounts = jsonText.split(/\r?\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
         } catch(e) {
-            const lines = jsonText.split(/\\r?\\n/);
+            const lines = jsonText.split(/\r?\n/);
             for (let l of lines) if(l.trim()) accounts.push(JSON.parse(l));
         }
         if (!accounts.length) return alert("Không có tài khoản");
@@ -668,6 +732,7 @@
         isRunning = false;
         if (stopRequested) addLog("⏹️ Đã dừng theo yêu cầu");
         else addLog('🎉 Hoàn tất kiểm tra ' + accounts.length + ' tài khoản.');
+        syncAccountsToTextarea();
         saveResults();
     }
 
@@ -690,7 +755,6 @@
             lastResults[idx] = newRes;
             renderResults();
             if (newRes.waitBuy) {
-                 // Chờ 25 giây cho hành trình mua máy của tab cha hoàn thiện
                  await new Promise(r=>setTimeout(r, 25000));
             } else {
                  if (!stopRequested) await new Promise(r=>setTimeout(r, 2000));
@@ -699,6 +763,7 @@
         isRunning = false;
         if (stopRequested) addLog("⏹️ Dừng retry");
         else addLog("✅ Hoàn tất retry.");
+        syncAccountsToTextarea();
         saveResults();
     }
 
@@ -716,18 +781,20 @@
              if (isErrorWithNoVM || !res.oldVm) {
                   addLog("👉 Chạy mua máy tự động cho: " + textLogin);
                   await automateLoginAndBuyInParent(acc);
-                  await new Promise(r => setTimeout(r, 25000)); // Chờ 25s cho đơn hoàn thiện
+                  await new Promise(r => setTimeout(r, 25000));
              }
         }
         addLog("✅ Đã xử lý mua máy hàng loạt hoàn tất.");
+        syncAccountsToTextarea();
+        saveResults();
     }
 
     function exportCSV() {
-        let csv = "STT,Login ID,VM cũ,Blacklist?,VM mới,Lỗi\\n";
+        let csv = "STT,Login ID,VM cũ,Blacklist?,VM mới,Lỗi\n";
         for (let i=0; i<lastResults.length; i++) {
             const r = lastResults[i];
             const stateText = r.isBlack ? "Có" : (r.error ? "-" : "Không");
-            csv += (i+1) + "," + (r.loginId||"") + "," + (r.oldVm||"") + "," + stateText + "," + (r.newVm||"") + "," + (r.error||"") + "\\n";
+            csv += (i+1) + "," + (r.loginId||"") + "," + (r.oldVm||"") + "," + stateText + "," + (r.newVm||"") + "," + (r.error||"") + "\n";
         }
         const blob = new Blob([csv], {type:"text/csv"});
         const a = document.createElement('a');
@@ -757,6 +824,37 @@
     document.getElementById('exportBtn').onclick = exportCSV;
     document.getElementById('clearBtn').onclick = clearTable;
     document.getElementById('saveBtn').onclick = () => { saveConfig(); addLog("✅ Đã lưu cấu hình"); };
+
+    document.getElementById('addAccBtn').onclick = () => {
+        const idVal = document.getElementById('addId').value.trim();
+        const tokenVal = document.getElementById('addToken').value.trim();
+        const fpVal = document.getElementById('addFp').value.trim();
+        if (!idVal || !tokenVal) {
+            alert("Vui lòng điền đủ UGPHONE-ID và UGPHONE-Token!");
+            return;
+        }
+        const newAcc = {
+            "UGPHONE-ID": idVal,
+            "loginId": idVal,
+            "UGPHONE-Token": tokenVal,
+            "accessToken": tokenVal,
+            "ugBrowserId": fpVal || "0742f9ecfe480939f8d215d6db7ebedf",
+            "web-fingerprint": fpVal || "0742f9ecfe480939f8d215d6db7ebedf"
+        };
+        lastAccounts.push(newAcc);
+        lastResults.push({ loginId: idVal, error: "Chưa kiểm tra (Mới thêm)" });
+        
+        document.getElementById('addId').value = '';
+        document.getElementById('addToken').value = '';
+        document.getElementById('addFp').value = '';
+        
+        renderResults();
+        addLog("➕ Đã thêm dòng tài khoản mới: " + idVal);
+    };
+
+    document.getElementById('overwriteBtn').onclick = () => {
+        syncAccountsToTextarea();
+    };
 
     loadLocal();
     addLog("✅ UI Tool sẵn sàng! (Cực kỳ mạnh mẽ: tự đăng nhập, điều hướng và tự mua hoàn toàn)");
