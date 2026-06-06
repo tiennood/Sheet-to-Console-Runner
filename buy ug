@@ -1,6 +1,6 @@
-// ===================== BUY UG (auto-click, KHÔNG tự động chạy) =====================
+// ===================== BUY UG (KHÔNG tự động chạy, chờ lệnh gọi) =====================
 (function() {
-    console.log('🚀 Script auto click mua máy (đã sửa - chờ lệnh gọi)');
+    console.log('🚀 Script auto click mua máy (đã sửa - chờ gọi buyUG())');
 
     function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
@@ -110,7 +110,7 @@
     }
 
     async function run() {
-        const overallTimeout = 60000; // 60 giây tổng
+        const overallTimeout = 60000;
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Overall timeout 60s")), overallTimeout));
         
         const mainPromise = (async () => {

@@ -1,6 +1,6 @@
-// ===================== UI TOOL (đã sửa lỗi CoreAPI) =====================
+// ===================== UI TOOL (đã sửa, gọi window.buyUG) =====================
 (function() {
-    // Định nghĩa CoreAPI ngay trong popup (dựa trên code gốc của bạn)
+    // -------------------- CORE API (xử lý lấy VM, replace, không cần mua) --------------------
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
@@ -64,247 +64,10 @@
             });
             if (data.code !== 200) throw new Error("Replace thất bại: " + data.msg);
             return data;
-        },
-
-        getBuyScript() {
-            return `
-                (async function() {
-                    const CONFIG = { REGION: 'Hong Kong', AUTO_PAY: true, TIMEOUT: 30000 };
-                    const stepLog = [];
-                    function addStep(step, status, detail) { 
-                        const msg = step + " - " + status + (detail ? ": " + detail : "");
-                        console.log("[UGphoneBuy] " + msg);
-                        stepLog.push({ Step: step, Status: status, Detail: detail || '' });
-                    }
-                    function isElementClickable(el) {
-                        if (!el) return false;
-                        if (el.disabled === true) return false;
-                        const ariaDisabled = el.getAttribute('aria-disabled');
-                        if (ariaDisabled === 'true') return false;
-                        if (el.classList && (el.classList.contains('disabled') || el.classList.contains('btn-disabled'))) return false;
-                        const style = window.getComputedStyle(el);
-                        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                        if (style.pointerEvents === 'none') return false;
-                        const rect = el.getBoundingClientRect();
-                        if (rect.width === 0 || rect.height === 0) return false;
-                        if (el.offsetParent === null && style.position !== 'fixed') return false;
-                        const centerX = rect.left + rect.width / 2;
-                        const centerY = rect.top + rect.height / 2;
-                        const elemAtCenter = document.elementsFromPoint(centerX, centerY)[0];
-                        if (elemAtCenter !== el && !el.contains(elemAtCenter)) {
-                            console.warn("[UGphoneBuy] Nút Pay bị che bởi:", elemAtCenter);
-                            return false;
-                        }
-                        return true;
-                    }
-                    function findPayButton() {
-                        let btn = document.querySelector('#buy-btn');
-                        if (btn && isElementClickable(btn) && btn.textContent.trim().toLowerCase() === 'pay') return btn;
-                        const payDiv = document.querySelector('.pay-btn');
-                        if (payDiv) {
-                            const innerBtn = payDiv.querySelector('button');
-                            if (innerBtn && isElementClickable(innerBtn) && innerBtn.textContent.trim().toLowerCase() === 'pay') return innerBtn;
-                        }
-                        const xpath = "//button[@id='buy-btn' and translate(normalize-space(text()), 'PAY', 'pay') = 'pay']";
-                        const xresult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-                        const xbtn = xresult.singleNodeValue;
-                        if (xbtn && isElementClickable(xbtn)) return xbtn;
-                        const allBtns = Array.from(document.querySelectorAll('button'));
-                        return allBtns.find(b => b.textContent.trim().toLowerCase() === 'pay' && isElementClickable(b));
-                    }
-                    async function waitForPayButton(timeout = 30000) {
-                        let observer = null, timeoutId = null, intervalId = null;
-                        return new Promise((resolve, reject) => {
-                            const cleanup = () => {
-                                if (observer) observer.disconnect();
-                                if (timeoutId) clearTimeout(timeoutId);
-                                if (intervalId) clearInterval(intervalId);
-                            };
-                            const check = () => {
-                                const btn = findPayButton();
-                                if (btn) {
-                                    addStep("Tìm thấy nút Pay", "THÀNH CÔNG", "clickable");
-                                    cleanup();
-                                    resolve(btn);
-                                    return true;
-                                }
-                                return false;
-                            };
-                            if (check()) return;
-                            observer = new MutationObserver(() => requestAnimationFrame(() => check()));
-                            observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'style'] });
-                            intervalId = setInterval(() => { if (check()) clearInterval(intervalId); }, 200);
-                            timeoutId = setTimeout(() => { cleanup(); reject(new Error("Không tìm thấy nút Pay có thể click sau " + timeout + "ms")); }, timeout);
-                        });
-                    }
-                    function waitForElement(selector, timeout) {
-                        return new Promise((resolve, reject) => {
-                            const start = Date.now();
-                            const check = () => {
-                                const el = document.querySelector(selector);
-                                if (el) return resolve(el);
-                                if (Date.now() - start >= timeout) reject(new Error("Timeout: " + selector));
-                                requestAnimationFrame(check);
-                            };
-                            check();
-                        });
-                    }
-                    function waitForHash(target, timeout) {
-                        return new Promise((resolve, reject) => {
-                            if (window.location.hash.includes(target)) return resolve(window.location.hash);
-                            const onHashChange = () => {
-                                if (window.location.hash.includes(target)) {
-                                    window.removeEventListener('hashchange', onHashChange);
-                                    clearTimeout(timer);
-                                    resolve(window.location.hash);
-                                }
-                            };
-                            window.addEventListener('hashchange', onHashChange);
-                            const timer = setTimeout(() => {
-                                window.removeEventListener('hashchange', onHashChange);
-                                reject(new Error("Timeout waiting for hash: " + target));
-                            }, timeout);
-                        });
-                    }
-                    function findOrderButton() {
-                        const btns = Array.from(document.querySelectorAll('#buy-btn, button'));
-                        return btns.find(btn => {
-                            const text = btn.textContent.trim().toLowerCase();
-                            return (text.includes('đặt mua') || text.includes('buy')) && btn.offsetParent !== null && !btn.disabled;
-                        });
-                    }
-                    function isFreeTrial(cardElement) {
-                        const text = cardElement.textContent.toLowerCase();
-                        return text.includes('free trial') || text.includes('hour') || text.includes('4-hour');
-                    }
-                    try {
-                        addStep("Bắt đầu", "INFO", "Chuẩn bị mua máy");
-                        if (!window.location.hash.includes('/dashboard')) {
-                            window.location.hash = '#/dashboard/index';
-                            await waitForHash('/dashboard', 10000);
-                            await new Promise(r => setTimeout(r, 1000));
-                        }
-                        try {
-                            const getBtn = await waitForElement('.get-btn', 5000);
-                            if (getBtn) { getBtn.click(); await new Promise(r => setTimeout(r, 1000)); }
-                        } catch(e) { addStep("Get máy", "BỎ QUA", "Không có nút Get"); }
-                        if (!window.location.hash.includes('/purchaseDevice')) {
-                            window.location.hash = '#/purchaseDevice';
-                            await waitForHash('/purchaseDevice', 15000);
-                        }
-                        await waitForElement('.room-item', 15000);
-                        const allRooms = Array.from(document.querySelectorAll('.room-item'));
-                        const targetRoom = allRooms.find(r => r.textContent.includes(CONFIG.REGION));
-                        if (!targetRoom) throw new Error("Không tìm thấy vùng " + CONFIG.REGION);
-                        targetRoom.click();
-                        addStep("Chọn vùng", "THÀNH CÔNG", CONFIG.REGION);
-                        await new Promise(r => setTimeout(r, 500));
-                        await waitForElement('#active-card', 15000);
-                        const cards = Array.from(document.querySelectorAll('#active-card'));
-                        let targetCard = null;
-                        const vipCards = cards.filter(card => card.textContent.toLowerCase().includes('vip') && !isFreeTrial(card));
-                        if (vipCards.length > 0) {
-                            const getDays = (text) => {
-                                const match = text.match(/(\\d+)\\s*[Nn]gày|[Dd]ays?/);
-                                if (match) return parseInt(match[1]);
-                                const numMatch = text.match(/\\b(250|365|180|90|30)\\b/);
-                                return numMatch ? parseInt(numMatch[1]) : 0;
-                            };
-                            vipCards.sort((a,b) => getDays(b.textContent) - getDays(a.textContent));
-                            targetCard = vipCards[0];
-                            addStep("Chọn gói VIP", "THÀNH CÔNG", targetCard.textContent.trim());
-                        } else {
-                            const trialCards = cards.filter(isFreeTrial);
-                            if (trialCards.length) {
-                                targetCard = trialCards[0];
-                                addStep("Chọn gói dùng thử", "THÀNH CÔNG", targetCard.textContent.trim());
-                            } else {
-                                targetCard = cards[0];
-                                addStep("Chọn gói (fallback)", "THÀNH CÔNG", targetCard.textContent.trim());
-                            }
-                        }
-                        if (!targetCard) throw new Error("Không có gói nào");
-                        const isTrial = isFreeTrial(targetCard);
-                        targetCard.click();
-                        await new Promise(r => setTimeout(r, 1500));
-                        await waitForElement('#buy-btn', 15000);
-                        const orderBtn = findOrderButton();
-                        if (orderBtn) orderBtn.click();
-                        else throw new Error("Không tìm thấy nút Đặt mua");
-                        addStep("Đặt mua", "THÀNH CÔNG");
-                        if (isTrial) {
-                            addStep("Gói dùng thử", "INFO", "Không cần thanh toán, chờ chuyển trang...");
-                            try {
-                                await Promise.race([waitForHash('/waiting', 30000), waitForHash('/dashboard', 60000)]);
-                                addStep("Hoàn tất (trial)", "THÀNH CÔNG", "Đã chuyển trang");
-                            } catch(e) {
-                                addStep("Hoàn tất (trial)", "WARN", "Không thấy hash, thử reload dashboard");
-                                window.location.hash = '#/dashboard/index';
-                                await waitForHash('/dashboard', 15000);
-                            }
-                            await new Promise(r => setTimeout(r, 3000));
-                        } else {
-                            addStep("Chờ nút Pay", "INFO", "Đang tìm nút thanh toán...");
-                            const payBtn = await waitForPayButton(30000);
-                            await new Promise(r => setTimeout(r, 300));
-                            addStep("Click nút Pay", "THÀNH CÔNG");
-                            payBtn.click();
-                            addStep("Nhấn thanh toán", "THÀNH CÔNG");
-                            try {
-                                await waitForHash('/waiting', 30000);
-                                addStep("Chờ xử lý", "THÀNH CÔNG");
-                            } catch(e) { addStep("Chờ waiting", "WARN", "Không thấy hash waiting"); }
-                            try {
-                                await waitForHash('/dashboard', 120000);
-                                addStep("Hoàn tất", "THÀNH CÔNG");
-                            } catch(e) { addStep("Hoàn tất", "WARN", "Không thấy dashboard nhưng có thể thành công"); }
-                        }
-                        addStep("MUA MÁY", "THÀNH CÔNG", "Đã mua/kích hoạt máy");
-                        return { success: true, stepLog };
-                    } catch(err) {
-                        addStep("MUA MÁY", "THẤT BẠI", err.message);
-                        return { success: false, error: err.message, stepLog };
-                    }
-                })();
-            `;
-        },
-
-        async buyOnParent(account, accountIndex, onLog) {
-            if (!window.opener) {
-                if (onLog) onLog("❌ Không có tab mẹ", true);
-                return false;
-            }
-            const token = account['UGPHONE-Token'] || account['accessToken'];
-            const loginId = account['UGPHONE-ID'] || account['loginId'];
-            if (!token || !loginId) {
-                if (onLog) onLog("❌ Thiếu token/loginId", true);
-                return false;
-            }
-            if (onLog) onLog(`🛒 Đăng nhập ${loginId} và mua máy...`);
-            window.opener.focus();
-            try {
-                window.opener.localStorage.setItem('UGPHONE-Token', token);
-                window.opener.localStorage.setItem('UGPHONE-ID', loginId);
-                if (onLog) onLog("✅ Đã cập nhật token, chạy script mua máy...");
-                const script = this.getBuyScript();
-                const buyPromise = window.opener.eval(script);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout 120s khi mua máy")), 120000));
-                const result = await Promise.race([buyPromise, timeoutPromise]);
-                if (result && result.success) {
-                    if (onLog) onLog(`✅ Mua máy thành công cho ${loginId}`);
-                    return true;
-                } else {
-                    if (onLog) onLog(`❌ Mua máy thất bại: ${result?.error || 'Lỗi không xác định'}`, true);
-                    return false;
-                }
-            } catch(err) {
-                if (onLog) onLog(`❌ Lỗi mua máy: ${err.message}`, true);
-                return false;
-            }
         }
     };
 
-    // -------------------- UI Controller (giống gốc nhưng dùng CoreAPI đã định nghĩa sẵn) --------------------
+    // -------------------- UI CONTROLLER --------------------
     const UIController = {
         lastAccounts: [],
         lastResults: [],
@@ -391,12 +154,20 @@
                     const acc = this.lastAccounts[idx];
                     if (!acc) return;
                     this.isRunning = true;
-                    const success = await CoreAPI.buyOnParent(acc, idx, this.addLog.bind(this));
-                    if (success) {
-                        const newResult = await this.processAccount(acc, idx, true);
-                        this.lastResults[idx] = newResult;
-                        this.renderResults();
-                        this.autoSaveAll();
+                    this.addLog(`🛒 Gọi mua máy cho ${acc['UGPHONE-ID'] || acc['loginId']}...`);
+                    if (typeof window.opener.buyUG === 'function') {
+                        try {
+                            await window.opener.buyUG();
+                            this.addLog("✅ Mua máy hoàn tất, đang cập nhật VM...");
+                            const newResult = await this.processAccount(acc, idx, true);
+                            this.lastResults[idx] = newResult;
+                            this.renderResults();
+                            this.autoSaveAll();
+                        } catch(err) {
+                            this.addLog(`❌ Lỗi mua máy: ${err.message}`, true);
+                        }
+                    } else {
+                        this.addLog("❌ Tab cha chưa load script buy ug hoặc không có hàm buyUG", true);
                     }
                     this.isRunning = false;
                 }).bind(this, i);
@@ -425,26 +196,8 @@
             } catch (err) {
                 const noVmError = err.message.includes('chưa có VM') || err.message.includes('Chưa có VM');
                 if (autoBuyIfNoVM && noVmError) {
-                    this.addLog(`🔄 Tài khoản ${loginId} chưa có VM, tiến hành mua...`);
-                    const buySuccess = await CoreAPI.buyOnParent(account, index, this.addLog.bind(this));
-                    if (buySuccess) {
-                        try {
-                            // Retry lấy VM mới
-                            for (let i=0; i<20; i++) {
-                                try {
-                                    const { vmId: newVm } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
-                                    this.addLog(`✅ Lấy được VM mới: ${newVm} cho ${loginId}`);
-                                    return { loginId, oldVm: null, newVm, isBlack: false, error: null };
-                                } catch(e) { await new Promise(r=>setTimeout(r, 5000)); }
-                            }
-                            return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Đã mua máy nhưng không lấy được VM" };
-                        } catch (fetchErr) {
-                            this.addLog(`❌ Không lấy được VM sau khi mua: ${fetchErr.message}`, true);
-                            return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Đã mua máy nhưng không lấy được VM" };
-                        }
-                    } else {
-                        return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Mua máy tự động thất bại" };
-                    }
+                    this.addLog(`🔄 Tài khoản ${loginId} chưa có VM, cần mua máy. Hãy dùng nút Mua máy riêng.`);
+                    return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Chưa có VM, cần mua thủ công" };
                 }
                 return { loginId, oldVm: null, newVm: null, isBlack: false, error: err.message };
             }
@@ -468,7 +221,7 @@
         },
 
         async runSmart() {
-            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước hoặc đợi", true); return; }
+            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước", true); return; }
             const jsonText = document.getElementById('jsonInput').value.trim();
             const blacklistText = document.getElementById('blacklistInput').value.trim();
             if (!jsonText) return alert("Nhập JSON");
@@ -508,7 +261,7 @@
         },
 
         async runReplacer() {
-            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước hoặc đợi", true); return; }
+            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước", true); return; }
             const jsonText = document.getElementById('jsonInput').value.trim();
             const blacklistText = document.getElementById('blacklistInput').value.trim();
             if (!jsonText) return alert("Nhập JSON");
@@ -532,7 +285,7 @@
             this.autoSaveAll();
             
             for (let i = 0; i < accounts.length && !this.stopRequested; i++) {
-                this.addLog("🔍 Xử lý " + (i+1) + "/" + accounts.length + ": " + (accounts[i]['UGPHONE-ID'] || accounts[i]['loginId']));
+                this.addLog(`🔍 Xử lý ${i+1}/${accounts.length}: ${accounts[i]['UGPHONE-ID'] || accounts[i]['loginId']}`);
                 const result = await this.processAccount(accounts[i], i, false);
                 this.lastResults.push(result);
                 this.renderResults();
@@ -546,7 +299,7 @@
         },
 
         async retryAllErrors() {
-            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước hoặc đợi", true); return; }
+            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước", true); return; }
             const errorIndices = [];
             for (let i=0; i<this.lastResults.length; i++) if (this.lastResults[i].error) errorIndices.push(i);
             if (errorIndices.length === 0) { this.addLog("Không có lỗi để retry"); return; }
@@ -575,15 +328,24 @@
         },
 
         async manualBuy() {
-            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước hoặc đợi", true); return; }
-            if (!this.lastAccounts.length) { this.addLog("❌ Không có tài khoản", true); return; }
+            if (this.isRunning) { this.addLog("⚠️ Đang có tác vụ chạy, hãy dừng trước", true); return; }
+            if (!this.lastAccounts.length) { this.addLog("❌ Không có tài khoản nào trong bảng", true); return; }
+            if (typeof window.opener.buyUG !== 'function') {
+                this.addLog("❌ Tab cha chưa load script buy ug hoặc không có hàm buyUG", true);
+                return;
+            }
             this.isRunning = true;
-            await CoreAPI.buyOnParent(this.lastAccounts[0], 0, this.addLog.bind(this));
-            this.blackSet = this.parseBlacklist(document.getElementById('blacklistInput').value);
-            const newResult = await this.processAccount(this.lastAccounts[0], 0, false);
-            this.lastResults[0] = newResult;
-            this.renderResults();
-            this.autoSaveAll();
+            this.addLog("🛒 Gọi mua máy trên tab cha (sẽ mua cho tài khoản đầu tiên)...");
+            try {
+                await window.opener.buyUG();
+                this.addLog("✅ Mua máy hoàn tất, cập nhật VM cho tài khoản đầu tiên...");
+                const newResult = await this.processAccount(this.lastAccounts[0], 0, false);
+                this.lastResults[0] = newResult;
+                this.renderResults();
+                this.autoSaveAll();
+            } catch(err) {
+                this.addLog(`❌ Lỗi mua máy: ${err.message}`, true);
+            }
             this.isRunning = false;
         },
 
@@ -638,26 +400,24 @@
         }
     };
 
-    // -------------------- HTML POPUP --------------------
+    // -------------------- HTML POPUP (đã gắn nút gọi manualBuy) --------------------
     const popupHtml = `
 <!DOCTYPE html>
 <html>
-<head><title>UGphone Console Tool Pro - Fixed</title>
+<head><title>UGphone Tool Pro - Integrated Buy</title>
 <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #1a1a1a; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
-    .tool-container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
+    body { margin: 0; background: #1a1a1a; color: #eee; font-family: 'Segoe UI', sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
+    .container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; }
     textarea, button { font-family: monospace; font-size: 11px; }
-    textarea { background: #1e1e2f; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; resize: vertical; }
+    textarea { background: #1e1e2f; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; resize: vertical; width: 100%; }
     button { background: #2c2c3e; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
     button:hover { filter: brightness(1.1); }
+    .btn-primary { background: #3b82f6; }
     .btn-success { background: #10b981; }
     .btn-warning { background: #f59e0b; }
-    .btn-primary { background: #3b82f6; }
     .btn-danger { background: #ef4444; }
-    .btn-secondary { background: #6b7280; }
-    .btn-smart { background: #8b5cf6; }
     .btn-stop { background: #dc2626; }
     .table-wrapper { flex: 1; overflow: auto; background: #0f0f1a; border-radius: 8px; border: 1px solid #2a2a3a; }
     table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -668,21 +428,20 @@
 </style>
 </head>
 <body>
-<div class="tool-container">
+<div class="container">
     <div class="row">
         <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON - Ví dụ:\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
         <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID - Ví dụ:\n["VM123456", "VM789012"]'></textarea>
     </div>
     <div class="flex">
-        <button id="runSmartBtn" class="btn-smart">🚀 Chạy thông minh</button>
+        <button id="runSmartBtn" class="btn-primary">🚀 Chạy thông minh (tự mua nếu thiếu VM)</button>
         <button id="runReplacerBtn" class="btn-success">▶ Kiểm tra & thay VM</button>
-        <button id="buyCurrentBtn" class="btn-primary">🛒 Mua máy mới</button>
-        <button id="retryAllErrorsBtn" class="btn-warning">🔄 Retry tất cả lỗi</button>
+        <button id="buyCurrentBtn" class="btn-warning">🛒 Mua máy mới (auto-click)</button>
+        <button id="retryAllErrorsBtn" class="btn-warning">🔄 Retry lỗi</button>
         <button id="stopBtn" class="btn-stop">⏹️ Dừng</button>
-        <button id="exportCsvBtn" class="btn-secondary">📎 Xuất CSV</button>
-        <button id="clearTableBtn" class="btn-secondary">🗑 Xóa bảng</button>
-        <button id="saveJsonBtn" class="btn-secondary">💾 Lưu cấu hình</button>
-        <button id="saveResultsBtn" class="btn-secondary">💾 Lưu kết quả</button>
+        <button id="exportCsvBtn">📎 Xuất CSV</button>
+        <button id="clearTableBtn">🗑 Xóa bảng</button>
+        <button id="saveConfigBtn">💾 Lưu cấu hình</button>
     </div>
     <div class="table-wrapper">
         <table id="resultTable">
@@ -694,23 +453,31 @@
 </div>
 <script>
     // Khởi tạo controller và gán sự kiện
-    const controller = ${JSON.stringify(UIController, (k,v) => typeof v === 'function' ? v.toString() : v)};
-    // Phục hồi các hàm
-    const controllerObj = {};
-    for (let key in controller) {
-        if (typeof controller[key] === 'string' && (controller[key].includes('function') || controller[key].includes('async'))) {
-            controllerObj[key] = eval('(' + controller[key] + ')');
+    const controllerDef = ${JSON.stringify(UIController, (k,v) => typeof v === 'function' ? v.toString() : v)};
+    const controller = {};
+    for (let key in controllerDef) {
+        if (typeof controllerDef[key] === 'string' && (controllerDef[key].includes('function') || controllerDef[key].includes('async'))) {
+            controller[key] = eval('(' + controllerDef[key] + ')');
         } else {
-            controllerObj[key] = controller[key];
+            controller[key] = controllerDef[key];
         }
     }
-    // Gắn thêm CoreAPI vào controller để các hàm xài được
-    controllerObj.CoreAPI = CoreAPI;
     // Bind methods
-    for (let key in controllerObj) {
-        if (typeof controllerObj[key] === 'function') controllerObj[key] = controllerObj[key].bind(controllerObj);
+    for (let key in controller) {
+        if (typeof controller[key] === 'function') controller[key] = controller[key].bind(controller);
     }
-    window.uiController = controllerObj;
+    window.uiController = controller;
+    // Gán CoreAPI
+    window.CoreAPI = ${JSON.stringify(CoreAPI, (k,v) => typeof v === 'function' ? v.toString() : v)};
+    const coreObj = {};
+    for (let key in window.CoreAPI) {
+        if (typeof window.CoreAPI[key] === 'string' && (window.CoreAPI[key].includes('async') || window.CoreAPI[key].includes('function'))) {
+            coreObj[key] = eval('(' + window.CoreAPI[key] + ')');
+        } else {
+            coreObj[key] = window.CoreAPI[key];
+        }
+    }
+    window.CoreAPI = coreObj;
     
     // Gán sự kiện
     document.getElementById('runSmartBtn').onclick = () => window.uiController.runSmart();
@@ -720,23 +487,27 @@
     document.getElementById('stopBtn').onclick = () => window.uiController.stop();
     document.getElementById('exportCsvBtn').onclick = () => window.uiController.exportCSV();
     document.getElementById('clearTableBtn').onclick = () => window.uiController.clearTable();
-    document.getElementById('saveJsonBtn').onclick = () => window.uiController.saveJson();
-    document.getElementById('saveResultsBtn').onclick = () => window.uiController.saveResults();
+    document.getElementById('saveConfigBtn').onclick = () => { window.uiController.saveJson(); };
     
     window.uiController.loadStored();
-    window.uiController.addLog("✅ Tool đã sửa lỗi CoreAPI - Sẵn sàng");
+    window.uiController.addLog("✅ UI Tool sẵn sàng. Nút Mua máy sẽ gọi buyUG() trên tab cha.");
+    if (typeof window.opener.buyUG === 'function') {
+        window.uiController.addLog("✅ Đã phát hiện hàm buyUG trên tab cha.");
+    } else {
+        window.uiController.addLog("⚠️ Chưa thấy hàm buyUG trên tab cha. Hãy chắc chắn đã load script 'buy ug' trước.", true);
+    }
 </script>
 </body>
 </html>
     `;
 
-    const popup = window.open("", "UGphoneToolProFixed", "width=800,height=600,resizable=yes,scrollbars=yes");
+    // Mở popup
+    const popup = window.open("", "UGphoneToolPro", "width=850,height=650,resizable=yes,scrollbars=yes");
     if (!popup) {
         alert("Vui lòng cho phép popup trên trình duyệt!");
         return;
     }
-    // Truyền CoreAPI sang popup
-    popup.CoreAPI = CoreAPI;
+    // Truyền CoreAPI và UIController vào popup (đã có trong HTML)
     popup.document.write(popupHtml);
     popup.document.close();
 })();
