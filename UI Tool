@@ -709,9 +709,9 @@
         try {
             let parsed = JSON.parse(jsonText);
             if (Array.isArray(parsed)) accounts = parsed;
-            else accounts = jsonText.split(/\r?\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
+            else accounts = jsonText.split(/\\r?\\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
         } catch(e) {
-            const lines = jsonText.split(/\r?\n/);
+            const lines = jsonText.split(/\\r?\\n/);
             for (let l of lines) if(l.trim()) accounts.push(JSON.parse(l));
         }
         if (!accounts.length) return alert("Không có tài khoản");
