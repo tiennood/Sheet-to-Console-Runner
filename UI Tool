@@ -374,7 +374,7 @@
     else addLog("❌ Lỗi: CoreAPI không được định nghĩa. Hãy đảm bảo file này được chạy đúng cách.", true);
 </script>
 </body>
-</html>`;
+</html>';
 
     const popup = window.open("", "UGphoneToolFull", "width=850,height=650,resizable=yes,scrollbars=yes");
     if (!popup) {
