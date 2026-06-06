@@ -1,8 +1,7 @@
 // ===================== BUY UG =====================
 (function() {
-    console.log('🚀 Script auto click mua máy (đã sửa - chờ gọi buyUG() hoặc postMessage)');
+    console.log('🚀 Script auto click mua máy (đã cải tiến - dùng text-matching & auto-wait-clickable)');
 
-    // HỆ THỐNG QUẢN LÝ VÀ CHỐNG RÒ RỈ INTERVAL
     let activeIntervals = [];
     function trackInterval(intervalId) {
         activeIntervals.push(intervalId);
@@ -17,7 +16,6 @@
         activeIntervals = [];
     }
 
-    // HÀM CHỜ PHẦN TỬ - CÓ THỂ BẠN CẦN SỬA SELECTOR Ở ĐÂY
     async function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
             const { selector, text, tag = 'div', contains = true } = options;
@@ -45,19 +43,49 @@
         });
     }
 
-    async function safeClick(options, timeout = 15000) {
-        const el = await waitForElement(options, timeout);
-        if (!el) {
-            console.log(`❌ Không tìm thấy: ${options.text || options.selector}`);
-            return false;
+    async function waitForClickable(options, timeout = 15000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            const el = await waitForElement(options, 2000);
+            if (el) {
+                const isDisabled = el.disabled || 
+                                   el.classList?.contains('van-button--disabled') || 
+                                   el.classList?.contains('van-button--loading') || 
+                                   el.getAttribute('aria-disabled') === 'true';
+                if (!isDisabled) {
+                    return el;
+                }
+            }
+            await new Promise(r => setTimeout(r, 200));
         }
-        if (el.disabled || el.classList?.contains('van-button--disabled')) {
-            console.log(`⚠️ Phần tử bị disabled: ${options.text || options.selector}`);
-            return false;
+        return null;
+    }
+
+    async function clickByTexts(listOfTexts, tagList = ['span', 'div', 'button', 'a', 'p'], timeout = 15000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            for (const tag of tagList) {
+                const elements = document.querySelectorAll(tag);
+                for (const el of elements) {
+                    if (!(el.offsetWidth > 0 || el.offsetHeight > 0)) continue;
+                    const textContent = (el.innerText || el.textContent || "").trim();
+                    for (const targetText of listOfTexts) {
+                        if (textContent === targetText || textContent.includes(targetText)) {
+                            const isDisabled = el.disabled || 
+                                               el.classList?.contains('van-button--disabled') || 
+                                               el.classList?.contains('van-button--loading');
+                            if (!isDisabled) {
+                                el.click();
+                                console.log(`✅ Đã click: "${targetText}" (Tag: ${tag})`);
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            await new Promise(r => setTimeout(r, 300));
         }
-        el.click();
-        console.log(`✅ Click: ${options.text || options.selector}`);
-        return true;
+        return false;
     }
 
     async function ensureDashboardPage() {
@@ -67,8 +95,9 @@
             console.log('✅ Đã đúng trang dashboard');
             return true;
         }
-        console.warn(`⚠️ Vui lòng mở thủ công: ${targetUrl} trước khi chạy để tránh tải lại trang xóa mất phạm vi hoạt động của kịch bản.`);
-        throw new Error("Vui lòng mở trang Dashboard và chạy lại kịch bản.");
+        console.log(`🧭 Đang tự động chuyển hướng đến trang dashboard: ${targetUrl}...`);
+        window.location.href = targetUrl;
+        throw new Error("Đang chuyển hướng trang web... Vui lòng chạy lại kịch bản sau khi trang load xong.");
     }
 
     async function waitForPurchaseDevicePage(timeout = 15000) {
@@ -87,41 +116,6 @@
         return false;
     }
 
-    // HÀM TÌM NÚT HONG KONG - CÓ THỂ CẦN SỬA TEXT HOẶC CLASS
-    async function waitForHongKong(timeout = 30000) {
-        const start = Date.now();
-        while (Date.now() - start < timeout) {
-            const items = document.querySelectorAll('.room-item');
-            let hkItem = null;
-            for (let item of items) {
-                if (item.innerText.includes('Hong Kong')) {
-                    hkItem = item;
-                    break;
-                }
-            }
-            if (hkItem) {
-                const needClick = !hkItem.classList.contains('active-btn');
-                return { element: hkItem, needClick };
-            }
-            await new Promise(r => setTimeout(r, 1000));
-        }
-        throw new Error("Timeout tìm Hong Kong");
-    }
-
-    // HÀM TÌM NÚT GET - CÓ THỂ CẦN SỬA TEXT HOẶC SELECTOR
-    async function waitForGetButton(timeout = 30000) {
-        const start = Date.now();
-        while (Date.now() - start < timeout) {
-            const getBtn = await waitForElement({ text: 'Get', tag: 'span', contains: false }, 2000);
-            if (getBtn) return getBtn;
-            // Fallback: tìm bằng class hoặc id
-            const fallback = document.querySelector('.get-btn, [id*="get"], [class*="get"]');
-            if (fallback && fallback.innerText.toLowerCase().includes('get')) return fallback;
-            await new Promise(r => setTimeout(r, 1000));
-        }
-        throw new Error("Timeout tìm nút Get");
-    }
-
     async function run() {
         const overallTimeout = 60000;
         const timeoutPromise = new Promise((_, reject) => {
@@ -134,38 +128,64 @@
         const mainPromise = (async () => {
             try {
                 await ensureDashboardPage();
-                const getButton = await waitForGetButton();
-                if (getButton.disabled) console.warn('⚠️ Nút Get đang disabled, vẫn thử click');
-                getButton.click();
-                console.log('✅ Click Get');
+                
+                console.log('⏳ Bước 1: Ấn nút "Get" (hoặc "Get Now") để vào trang mua máy...');
+                const pressedGet = await clickByTexts(['Get', 'Get Now', 'Get now', 'Nhận ngay', 'Nhận'], ['span', 'div', 'button', 'p']);
+                if (!pressedGet) {
+                    const fallbackGet = document.querySelector('.get-btn, [class*="get-btn"], [id*="get-btn"]');
+                    if (fallbackGet) { fallbackGet.click(); console.log('✅ Click Get fallback selector'); }
+                    else throw new Error("Không tìm thấy nút Get trên dashboard");
+                }
 
                 const isOnPurchasePage = await waitForPurchaseDevicePage();
-                if (!isOnPurchasePage) throw new Error("Không thể vào trang purchaseDevice");
+                if (!isOnPurchasePage) throw new Error("Không thể chuyển tới trang purchaseDevice");
 
-                const { element: hkEl, needClick } = await waitForHongKong();
-                if (needClick) {
-                    hkEl.click();
-                    console.log('✅ Đã click Hong Kong');
+                console.log('⏳ Bước 2: Chọn Booking items (ví dụ UVIP hoặc UVIP-HK)...');
+                await new Promise(r => setTimeout(r, 1000));
+                await clickByTexts(['UVIP HK', 'UVIP-HK', 'UVIP_HK', 'UVIP'], ['span', 'div', 'p', 'h3']);
+
+                console.log('⏳ Bước 3: Chọn Server / Area (Hong Kong, Hongkong)...');
+                await new Promise(r => setTimeout(r, 1000));
+                await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p']);
+
+                console.log('⏳ Bước 4: Chọn gói package (Ví dụ: 250 Diamond)...');
+                await new Promise(r => setTimeout(r, 1000));
+                const activeCard = await clickByTexts(['250Diamond', '250 Kim Cương', '1 Day', '1 Ngày', '250'], ['span', 'div', 'p', 'h3', 'h4']);
+                if (!activeCard) {
+                    const fallbackCard = document.querySelector('.room-item, .card-item, .item-card');
+                    if (fallbackCard) { fallbackCard.click(); console.log('✅ Click fallback card'); }
                 }
 
-                // Chọn card (có thể cần sửa selector)
-                const cardClicked = await safeClick({ selector: '#active-card' }, 10000);
-                if (!cardClicked) throw new Error("Không click được card");
+                console.log('⏳ Bước 5: Ấn nút Buy hoặc Buy Now...');
+                await new Promise(r => setTimeout(r, 1000));
+                const buyBtnClicked = await clickByTexts(['Buy', 'Buy Now', 'Mua', 'Mua ngay'], ['span', 'button', 'div', 'p']);
+                if (!buyBtnClicked) {
+                    const fallbackBuy = document.querySelector('#buy-btn, .buy-btn, [class*="buy-btn"]');
+                    if (fallbackBuy) { fallbackBuy.click(); console.log('✅ Click fallback button Buy'); }
+                    else throw new Error("Không thấy nút bấm Mua");
+                }
 
-                const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)' }, 15000);
-                if (!buyClicked) throw new Error("Không click được Buy");
+                console.log('⏳ Bước 6: Chờ màn thanh toán, chọn thanh toán bằng Diamond...');
+                await new Promise(r => setTimeout(r, 2000));
+                await clickByTexts(['Use 250Diamond Payment', '250Diamond', 'Diamond Payment', 'Diamond'], ['span', 'div', 'p', 'label']);
 
-                console.log('Đã click Buy, chờ màn thanh toán...');
-                const payFree = await waitForElement({ selector: '#pay-free-sel' }, 20000);
-                if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
-                    console.log('✅ #pay-free-sel đã xuất hiện');
-                    const payClicked = await safeClick({ text: 'Pay', tag: 'button' }, 10000);
-                    if (payClicked) console.log('💰 Đã thanh toán!');
-                    else console.warn('⚠️ Không click được Pay');
+                console.log('⏳ Bước 7: Xác nhận thanh toán (Pay button)...');
+                await new Promise(r => setTimeout(r, 1000));
+                
+                // Wait for the button to be clickable, non-disabled (safely bypasses van-button--disabled/loading)
+                const payBtnEl = await waitForClickable({ text: 'Pay', tag: 'button' }, 10000) || 
+                                 await waitForClickable({ text: 'Thanh toán', tag: 'button' }, 5000) ||
+                                 await waitForClickable({ text: 'Xác nhận', tag: 'button' }, 5000);
+                                 
+                if (payBtnEl) {
+                    payBtnEl.click();
+                    console.log('💰 ĐÃ KÍCH HOẠT THANH TOÁN THÀNH CÔNG!');
                 } else {
-                    console.warn('⚠️ Không tìm thấy #pay-free-sel hoặc text sai, thử click Pay bằng selector khác');
-                    await safeClick({ text: "Pay", tag: "button", contains: true }, 5000);
+                    const finalPay = await clickByTexts(['Pay', 'Thanh toán', 'Confirm', 'Xác nhận', 'Pay Now'], ['span', 'button', 'div']);
+                    if (finalPay) console.log('💰 Đã click thanh toán!');
+                    else console.warn('⚠️ Không tìm được nút Pay khả dụng');
                 }
+                
                 console.log('🏁 Kết thúc thành công');
             } finally {
                 clearAllIntervals();
@@ -175,7 +195,6 @@
         await Promise.race([mainPromise, timeoutPromise]);
     }
 
-    // Lắng nghe lệnh từ popup
     window.addEventListener('message', function(event) {
         if (event.data && event.data.type === 'RUN_BUY_UG') {
             console.log('📩 Nhận lệnh mua máy từ popup');
@@ -184,5 +203,5 @@
     });
 
     window.buyUG = run;
-    console.log("✅ Buy UG script loaded. Dùng await buyUG() hoặc gửi postMessage để chạy mua máy.");
+    console.log("✅ Buy UG script loaded. Dùng await buyUG() để chạy mua máy.");
 })();
