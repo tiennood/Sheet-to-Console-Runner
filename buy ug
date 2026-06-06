@@ -1,207 +1,178 @@
-(async function() {
-  const CONFIG = {
-    REGION: 'Hong Kong',
-    CARD_TEXT: 'UVIP Hong Kong',
-    AUTO_PAY: true,
-    TIMEOUT: 30000,
-  };
+(function autoClickFixed() {
+    console.log('🚀 Script auto click (sửa lỗi tìm Hong Kong, chỉ kiểm tra #pay-free-sel)');
 
-  const stepLog = [];
-  function addStep(step, status, detail = '') {
-    stepLog.push({ Step: step, Status: status, Detail: detail });
-  }
+    // Helper: chờ phần tử xuất hiện (không loop vô hạn, có timeout)
+    function waitForElement(options) {
+        return new Promise((resolve) => {
+            const { selector, text, tag = 'div', timeout = 15000, contains = true, interval = 200 } = options;
+            const start = Date.now();
+            const checkInterval = setInterval(() => {
+                let el = null;
+                if (selector) {
+                    el = document.querySelector(selector);
+                } else if (text) {
+                    const elements = document.querySelectorAll(tag);
+                    for (let e of elements) {
+                        const match = contains ? e.innerText.includes(text) : e.innerText.trim() === text;
+                        if (match) {
+                            el = e;
+                            break;
+                        }
+                    }
+                }
+                if (el) {
+                    clearInterval(checkInterval);
+                    resolve(el);
+                } else if (Date.now() - start > timeout) {
+                    clearInterval(checkInterval);
+                    resolve(null);
+                }
+            }, interval);
+        });
+    }
 
-  function printTable(title, data) {
-    console.log(`%c${title}`, 'font-weight: bold; font-size: 14px; color: #0066cc;');
-    console.table(data);
-  }
-
-  function waitForElement(selector, timeout = CONFIG.TIMEOUT) {
-    return new Promise((resolve, reject) => {
-      const start = Date.now();
-      const check = () => {
-        const el = document.querySelector(selector);
-        if (el) return resolve(el);
-        if (Date.now() - start >= timeout) {
-          reject(new Error(`Timeout: không tìm thấy "${selector}" sau ${timeout}ms`));
-          return;
+    async function safeClick(options) {
+        const el = await waitForElement(options);
+        if (!el) {
+            console.log(`❌ Không tìm thấy: ${options.text || options.selector}`);
+            return false;
         }
-        requestAnimationFrame(check);
-      };
-      check();
-    });
-  }
-
-  function waitForHash(regex, timeout = CONFIG.TIMEOUT) {
-    return new Promise((resolve, reject) => {
-      if (regex.test(window.location.hash)) return resolve(window.location.hash);
-      let timer;
-      const onHashChange = () => {
-        if (regex.test(window.location.hash)) {
-          window.removeEventListener('hashchange', onHashChange);
-          clearTimeout(timer);
-          resolve(window.location.hash);
+        if (el.disabled || el.classList?.contains('van-button--disabled')) {
+            console.log(`⚠️ Phần tử bị disabled: ${options.text || options.selector}`);
+            return false;
         }
-      };
-      window.addEventListener('hashchange', onHashChange);
-      timer = setTimeout(() => {
-        window.removeEventListener('hashchange', onHashChange);
-        reject(new Error(`Timeout chờ URL khớp ${regex} sau ${timeout}ms`));
-      }, timeout);
-    });
-  }
-
-  function findButtonByText(keywords, requireVisible = true, requireEnabled = true) {
-    const btns = Array.from(document.querySelectorAll('#buy-btn'));
-    console.log(`🔍 Kiểm tra ${btns.length} nút #buy-btn:`);
-    btns.forEach((btn, i) => {
-      const visible = btn.offsetParent !== null;
-      const disabled = btn.disabled;
-      const text = btn.textContent.trim();
-      console.log(`  [${i}] "${text}" | visible=${visible} | disabled=${disabled}`);
-    });
-
-    const found = btns.find(btn => {
-      const text = btn.textContent.trim().toLowerCase();
-      const keywordMatch = keywords.some(k => text.includes(k.toLowerCase()));
-      const visible = !requireVisible || btn.offsetParent !== null;
-      const enabled = !requireEnabled || !btn.disabled;
-      return keywordMatch && visible && enabled;
-    });
-
-    if (!found) {
-      console.warn('⚠️ Không tìm thấy nút khớp. Từ khoá:', keywords,
-                   'Yêu cầu visible:', requireVisible, 'enabled:', requireEnabled);
-    }
-    return found;
-  }
-
-  async function waitForPayButton(timeout = CONFIG.TIMEOUT) {
-    console.log('⏳ Chờ nút Pay khả dụng (visible + không disabled)...');
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      const payBtn = findButtonByText(['Thanh toán', 'pay'], true, true);
-      if (payBtn) {
-        console.log('✅ Đã thấy nút Pay:', payBtn.textContent.trim());
-        return payBtn;
-      }
-      await new Promise(r => setTimeout(r, 500));
-    }
-    throw new Error('Không tìm thấy nút Pay khả dụng sau ' + timeout + 'ms');
-  }
-
-  async function clickGetButton() {
-    console.log('🟡 Bước 0: Kiểm tra nút "Get" trên Dashboard...');
-    if (!window.location.hash.includes('/dashboard')) {
-      window.location.hash = '#/dashboard/index';
-      await waitForHash(/\/dashboard/);
-      await new Promise(r => setTimeout(r, 1000));
-    }
-    try {
-      await waitForElement('.get-btn', 10000);
-      const getBtn = document.querySelector('.get-btn');
-      if (getBtn) {
-        console.log('✅ Tìm thấy nút Get, đang click...');
-        getBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        getBtn.click();
-        await new Promise(r => setTimeout(r, 1000));
-        addStep('0. Nhấn nút Get', '✅', 'Đã nhận trial (nếu có)');
-      }
-    } catch (e) {
-      console.log('ℹ️ Không thấy nút Get, bỏ qua.');
-      addStep('0. Nhấn nút Get', '⚠️ Bỏ qua', 'Không tìm thấy nút');
-    }
-  }
-
-  try {
-    printTable('⚙️ Cấu hình', [
-      { Key: 'REGION', Value: CONFIG.REGION },
-      { Key: 'CARD_TEXT', Value: CONFIG.CARD_TEXT },
-      { Key: 'AUTO_PAY', Value: CONFIG.AUTO_PAY ? 'YES (Tự động)' : 'NO (Hỏi)' },
-      { Key: 'TIMEOUT', Value: CONFIG.TIMEOUT + 'ms' },
-    ]);
-
-    await clickGetButton();
-
-    // Bước 1: Vào trang mua
-    if (!window.location.hash.includes('/purchaseDevice')) {
-      console.log('Bước 1: Chuyển đến purchaseDevice...');
-      window.location.hash = '#/purchaseDevice';
-      await waitForHash(/\/purchaseDevice/);
-    }
-    console.log('⏳ Đợi danh sách khu vực...');
-    await waitForElement('.room-item', CONFIG.TIMEOUT);
-    addStep('1. Vào trang mua', '✅');
-
-    // Bước 2: Chọn vùng
-    console.log(`Bước 2: Chọn vùng "${CONFIG.REGION}"...`);
-    const allRoomItems = Array.from(document.querySelectorAll('.room-item'));
-    const targetRoom = allRoomItems.find(item => item.textContent.includes(CONFIG.REGION));
-    if (!targetRoom) throw new Error(`Không tìm thấy vùng "${CONFIG.REGION}"`);
-    targetRoom.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    targetRoom.click();
-    await new Promise(r => setTimeout(r, 500));
-    addStep(`2. Chọn vùng ${CONFIG.REGION}`, '✅');
-
-    // Bước 3: Chọn gói cước
-    console.log(`Bước 3: Chọn gói "${CONFIG.CARD_TEXT}"...`);
-    await waitForElement('#active-card', CONFIG.TIMEOUT);
-    const cards = Array.from(document.querySelectorAll('#active-card'));
-    const targetCard = cards.find(card => card.textContent.includes(CONFIG.CARD_TEXT));
-    if (!targetCard) throw new Error(`Không tìm thấy gói "${CONFIG.CARD_TEXT}"`);
-    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    targetCard.click();
-    await new Promise(r => setTimeout(r, 1500));
-    addStep(`3. Chọn gói ${CONFIG.CARD_TEXT}`, '✅');
-
-    // Bước 4: Nhấn Đặt mua / Buy
-    console.log('Bước 4: Nhấn "Đặt mua" / "Buy"...');
-    await waitForElement('#buy-btn', CONFIG.TIMEOUT);
-    const orderBtn = findButtonByText(['Đặt mua', 'buy'], true, false);
-    if (!orderBtn) {
-      await new Promise(r => setTimeout(r, 2000));
-      const retry = findButtonByText(['Đặt mua', 'buy'], true, false);
-      if (!retry) throw new Error('Không tìm thấy nút Đặt mua/Buy');
-      retry.click();
-    } else {
-      orderBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      orderBtn.click();
-    }
-    addStep('4. Click Đặt mua/Buy', '✅');
-
-    // Bước 5: Chờ nút Pay khả dụng
-    console.log('Bước 5: Chờ nút Pay khả dụng...');
-    const payBtn = await waitForPayButton(CONFIG.TIMEOUT);
-    // Bước 6: Tự động click Pay (AUTO_PAY = true)
-    console.log('Bước 6: Tự động click Pay...');
-    payBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    payBtn.click();
-    addStep('5. Vào trang thanh toán', '✅');
-    addStep('6. Click Thanh toán/Pay', '✅');
-
-    // Bước 7: Chờ waiting – không throw lỗi nếu timeout
-    let orderId = 'N/A';
-    console.log('Bước 7: Chờ trang waiting (30s)...');
-    try {
-      await waitForHash(/\/waiting/, 30000);
-      orderId = new URLSearchParams(window.location.hash.split('?')[1]).get('order_id') || 'N/A';
-      addStep('7. Vào waiting', '✅', `Order: ${orderId}`);
-    } catch (e) {
-      addStep('7. Vào waiting', '⚠️ Không vào được waiting', 'Có thể đã thanh toán nhưng không redirect');
+        el.click();
+        console.log(`✅ Click: ${options.text || options.selector}`);
+        return true;
     }
 
-    // Bước 8: Chờ dashboard – không bắt buộc
-    console.log('⏳ Đợi khởi tạo thiết bị (tối đa 2 phút)...');
-    try {
-      await waitForHash(/\/dashboard/, 120000);
-      addStep('8. Hoàn tất', '✅ Đã vào dashboard');
-    } catch (e) {
-      addStep('8. Hoàn tất', '⚠️ Timeout, nhưng thiết bị có thể đã được tạo');
+    // Đảm bảo đang ở trang dashboard, nếu không thì chuyển hướng
+    async function ensureDashboardPage() {
+        const targetUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
+        const currentUrl = window.location.href;
+        if (currentUrl === targetUrl) {
+            console.log('✅ Đã đúng trang dashboard');
+            return true;
+        }
+        console.log(`⚠️ Đang ở ${currentUrl}, chuyển sang dashboard...`);
+        window.location.href = targetUrl;
+        // Chờ trang mới load và DOM sẵn sàng
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                if (window.location.href === targetUrl) {
+                    clearInterval(checkInterval);
+                    console.log('✅ Đã chuyển xong sang dashboard');
+                    // Chờ thêm 1.5s để React render
+                    setTimeout(() => resolve(true), 1500);
+                }
+            }, 500);
+        });
     }
 
-  } catch (error) {
-    addStep('Lỗi', '❌ ' + error.message);
-  } finally {
-    printTable('📋 Kết quả từng bước', stepLog);
-  }
+    // Chờ URL hoặc DOM của trang purchaseDevice
+    async function waitForPurchaseDevicePage() {
+        console.log('⏳ Chờ chuyển đến trang /purchaseDevice...');
+        const start = Date.now();
+        while (Date.now() - start < 15000) {
+            if (window.location.hash.includes('purchaseDevice') || 
+                window.location.pathname.includes('purchaseDevice')) {
+                console.log('✅ Đã vào đúng trang purchaseDevice');
+                await new Promise(r => setTimeout(r, 1000));
+                return true;
+            }
+            await new Promise(r => setTimeout(r, 500));
+        }
+        console.error('❌ Không chuyển được sang purchaseDevice');
+        return false;
+    }
+
+    // Loop mỗi 2s để tìm nút Hong Kong
+    async function waitForHongKong() {
+        console.log('⏳ Đợi nút Hong Kong xuất hiện (kiểm tra mỗi 2s)...');
+        while (true) {
+            const items = document.querySelectorAll('.room-item');
+            let hkItem = null;
+            for (let item of items) {
+                if (item.innerText.includes('Hong Kong')) {
+                    hkItem = item;
+                    break;
+                }
+            }
+            if (hkItem) {
+                if (!hkItem.classList.contains('active-btn')) {
+                    console.log('✅ Tìm thấy Hong Kong (chưa active)');
+                    return { element: hkItem, needClick: true };
+                } else {
+                    console.log('✅ Hong Kong đã active, không cần click');
+                    return { element: hkItem, needClick: false };
+                }
+            }
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    // Chờ nút Get xuất hiện (kiểm tra mỗi 2s)
+    async function waitForGetButton() {
+        console.log('⏳ Đợi nút Get xuất hiện (kiểm tra mỗi 2s)...');
+        while (true) {
+            const getBtn = await waitForElement({ text: 'Get', tag: 'span', contains: false, timeout: 0 }); // timeout 0 nghĩa là không giới hạn trong lần gọi này, nhưng trong vòng lặp sẽ tự retry
+            if (getBtn) {
+                console.log('✅ Tìm thấy nút Get');
+                return getBtn;
+            }
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    async function run() {
+        // 0. Đảm bảo đang ở dashboard
+        await ensureDashboardPage();
+
+        // 1. Chờ và click Get (lặp mỗi 2s cho đến khi xuất hiện)
+        const getButton = await waitForGetButton();
+        if (getButton.disabled || getButton.classList?.contains('van-button--disabled')) {
+            console.log('⚠️ Nút Get đang bị disabled, vẫn thử click');
+        }
+        getButton.click();
+        console.log('✅ Click Get');
+
+        // 2. Đợi trang purchaseDevice load
+        const isOnPurchasePage = await waitForPurchaseDevicePage();
+        if (!isOnPurchasePage) {
+            console.error('❌ Không thể vào trang purchaseDevice, dừng script');
+            return;
+        }
+
+        // 3. Xử lý Hong Kong
+        const { element: hkEl, needClick } = await waitForHongKong();
+        if (needClick) {
+            hkEl.click();
+            console.log('✅ Đã click Hong Kong');
+        }
+
+        // 4. Click UVIP card
+        await safeClick({ selector: '#active-card', timeout: 10000 });
+
+        // 5. Click Buy
+        const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)', timeout: 15000 });
+        if (!buyClicked) {
+            console.error('❌ Không thể click Buy, dừng lại');
+            return;
+        }
+        console.log('Đã click Buy, chờ màn thanh toán...');
+
+        // 6. Chờ #pay-free-sel
+        const payFree = await waitForElement({ selector: '#pay-free-sel', timeout: 20000 });
+        if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
+            console.log('✅ #pay-free-sel đã xuất hiện với text đúng');
+            await safeClick({ text: 'Pay', tag: 'button', timeout: 10000 });
+            console.log('💰 Đã thanh toán!');
+        } else {
+            console.error('❌ Không tìm thấy #pay-free-sel hoặc text sai, không click Pay');
+        }
+
+        console.log('🏁 Kết thúc.');
+    }
+
+    run();
 })();
