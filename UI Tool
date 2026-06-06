@@ -631,7 +631,7 @@
                 if (isRunning) { addLog("Đang chạy hàng loạt, hãy dừng trước", true); return; }
                 const acc = lastAccounts[idx];
                 if (!acc) return;
-                addLog(`🛒 Kích hoạt tiến trình Mua máy cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
+                addLog('🛒 Kích hoạt tiến trình Mua máy cho: ' + (acc['UGPHONE-ID'] || acc.loginId));
                 await automateLoginAndBuyInParent(acc);
             }).bind(null, i);
 
