@@ -152,14 +152,14 @@
         await Promise.race([mainPromise, timeoutPromise]);
     }
 
+    // Lắng nghe message từ popup
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'RUN_BUY_UG') {
+            console.log('📩 Nhận lệnh mua máy từ popup');
+            run().catch(console.error);
+        }
+    });
+
     window.buyUG = run;
-    // Lắng nghe message từ popup để chạy buyUG
-window.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'RUN_BUY_UG') {
-        console.log('📩 Nhận lệnh mua máy từ popup');
-        run().catch(console.error);
-    }
-});
-    console.log("✅ Buy UG ready. Có thể gọi từ popup qua postMessage.");
     console.log("✅ Buy UG script loaded. Dùng await buyUG() để chạy mua máy.");
 })();
