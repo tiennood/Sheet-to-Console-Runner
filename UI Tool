@@ -1,4 +1,4 @@
-// ===================== UI TOOL - NHÚNG CỨNG COREAPI =====================
+// ===================== UI TOOL - NHÚNG CỨNG COREAPI, HỖ TRỢ KEY CŨ =====================
 (function() {
     // Định nghĩa CoreAPI ngay trong popup (sẽ được copy vào)
     const CoreAPISource = {
@@ -96,7 +96,7 @@
         <button id="saveBtn">💾 Lưu cấu hình</button>
     </div>
     <div class="table-wrapper">
-        <table id="resultTable"><thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Mua máy</th></tr></thead><tbody id="resultBody"></tbody></table>
+        <table id="resultTable"><thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Mua máy</th></tr></thead><tbody id="resultBody"></tbody></td>
     </div>
     <div class="log-area" id="logArea"></div>
 </div>
@@ -200,30 +200,49 @@
         saveResults();
     }
 
+    // ---- HÀM LƯU / TẢI VỚI HỖ TRỢ KEY CŨ ----
     function saveConfig() {
         const json = document.getElementById('jsonInput').value;
         const black = document.getElementById('blacklistInput').value;
+        // Lưu bằng key mới
         if (json) localStorage.setItem('ug_tool_json', json);
         localStorage.setItem('ug_tool_black', black);
+        // Cũng lưu key cũ để tương thích ngược (nếu cần)
+        if (json) localStorage.setItem('ugphone_console_json_popup', json);
+        localStorage.setItem('ugphone_console_black_popup', black);
         addLog("Đã lưu cấu hình");
     }
+    
     function saveResults() {
         localStorage.setItem('ug_tool_results', JSON.stringify(lastResults));
         localStorage.setItem('ug_tool_accounts', JSON.stringify(lastAccounts));
+        // Lưu key cũ
+        localStorage.setItem('ugphone_last_results_popup', JSON.stringify(lastResults));
+        localStorage.setItem('ugphone_last_accounts_popup', JSON.stringify(lastAccounts));
     }
+    
     function loadLocal() {
-        const json = localStorage.getItem('ug_tool_json');
+        // Đọc cấu hình: ưu tiên key mới, nếu không có mới dùng key cũ
+        let json = localStorage.getItem('ug_tool_json');
+        if (!json) json = localStorage.getItem('ugphone_console_json_popup');
         if (json) document.getElementById('jsonInput').value = json;
-        const black = localStorage.getItem('ug_tool_black');
+        
+        let black = localStorage.getItem('ug_tool_black');
+        if (!black) black = localStorage.getItem('ugphone_console_black_popup');
         if (black) document.getElementById('blacklistInput').value = black;
-        const res = localStorage.getItem('ug_tool_results');
-        if (res) {
+        
+        // Đọc kết quả
+        let results = localStorage.getItem('ug_tool_results');
+        if (!results) results = localStorage.getItem('ugphone_last_results_popup');
+        if (results) {
             try {
-                lastResults = JSON.parse(res);
-                lastAccounts = JSON.parse(localStorage.getItem('ug_tool_accounts') || '[]');
+                lastResults = JSON.parse(results);
+                let accounts = localStorage.getItem('ug_tool_accounts');
+                if (!accounts) accounts = localStorage.getItem('ugphone_last_accounts_popup');
+                if (accounts) lastAccounts = JSON.parse(accounts);
                 renderResults();
-                addLog("Đã tải " + lastResults.length + " kết quả");
-            } catch(e) {}
+                addLog("📂 Đã tải " + lastResults.length + " kết quả (hỗ trợ key cũ)");
+            } catch(e) { console.error(e); }
         }
     }
 
@@ -336,7 +355,7 @@
     document.getElementById('saveBtn').onclick = saveConfig;
 
     loadLocal();
-    addLog("UI Tool sẵn sàng (CoreAPI nội bộ).");
+    addLog("UI Tool sẵn sàng (CoreAPI nội bộ, hỗ trợ key cũ).");
     if (window.opener) {
         addLog("Có tab cha, sẽ gửi postMessage khi mua máy.");
     } else {
