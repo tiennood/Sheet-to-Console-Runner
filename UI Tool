@@ -186,6 +186,19 @@
             window.opener.localStorage.clear();
             window.opener.sessionStorage.clear();
 
+            // Nạp TOÀN BỘ các tham số thô từ JSON tài khoản của người dùng (bảo chứng ghim cả MQTT, Public Key, lang...)
+            for (let key in acc) {
+                if (acc.hasOwnProperty(key)) {
+                    let val = acc[key];
+                    if (val !== undefined && val !== null) {
+                        let strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+                        window.opener.localStorage.setItem(key, strVal);
+                        window.opener.sessionStorage.setItem(key, strVal);
+                    }
+                }
+            }
+
+            // Đồng thời ghim luôn các alias thông dụng để đảm bảo tương thích tuyệt đối cho front-end
             const keysToken = ['UGPHONE-Token', 'accessToken', 'access_token', 'token'];
             const keysId = ['UGPHONE-ID', 'loginId', 'login_id', 'uid', 'userId', 'user_id'];
             const keysFp = ['ugBrowserId', 'web-fingerprint', 'fingerprint'];
@@ -203,12 +216,13 @@
                 window.opener.sessionStorage.setItem(k, fp);
             });
 
-            // Ghi đè cookie an toàn
+            // Ghi đè cookie an toàn trực tiếp trên domain của tab cha
             const domain = window.opener.location.hostname;
             window.opener.document.cookie = "UGPHONE-Token=" + token + "; path=/; domain=" + domain + ";";
             window.opener.document.cookie = "accessToken=" + token + "; path=/; domain=" + domain + ";";
             window.opener.document.cookie = "UGPHONE-ID=" + loginId + "; path=/; domain=" + domain + ";";
             window.opener.document.cookie = "loginId=" + loginId + "; path=/; domain=" + domain + ";";
+            window.opener.document.cookie = "ugBrowserId=" + fp + "; path=/; domain=" + domain + ";";
 
             addLog("🧭 Chuyển hướng tab cha về Dashboard...");
             window.opener.location.href = "https://www.ugphone.com/toc-portal/#/dashboard/index";
@@ -245,7 +259,7 @@
             // Injected Script Code (đã được tối ưu text-matching tuyệt đối)
             const buyCommand = \`
             (function() {
-                console.log('🚀 Chạy kích hoạt nạp kịch bản buy_ug...';
+                console.log('🚀 Chạy kích hoạt nạp kịch bản buy_ug...');
                 
                 async function waitForElement(options, timeout = 15000) {
                     return new Promise((resolve) => {
