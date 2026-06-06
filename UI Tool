@@ -346,18 +346,44 @@
 
                 async function go() {
                     try {
-                        const targetUrl = 'https://www.ugphone.com/toc-portal/#/purchaseDevice';
-                        if (!window.location.href.includes('purchaseDevice')) {
-                            window.location.hash = '#/purchaseDevice';
-                            window.location.href = targetUrl;
-                            await new Promise(r => setTimeout(r, 1500));
+                        console.log('🧭 Bắt đầu hành trình chuẩn bị phiên mua máy (Dashboard -> click "Get" -> Purchase)...');
+                        const dashboardUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
+                        const purchaseUrl = 'https://www.ugphone.com/toc-portal/#/purchaseDevice';
+
+                        if (!window.location.href.includes('dashboard/index') && !window.location.href.includes('purchaseDevice')) {
+                            console.log('🧭 Điều hướng về trang Dashboard để chuẩn bị click nút Get...');
+                            window.location.hash = '#/dashboard/index';
+                            window.location.href = dashboardUrl;
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+
+                        if (window.location.href.includes('dashboard/index')) {
+                            console.log('⏳ Chờ và xác định nút Get/Nhận máy trên Dashboard...');
+                            let getBtnClicked = false;
+                            for (let retry = 0; retry < 5; retry++) {
+                                getBtnClicked = await clickByTexts(['Get', 'Get Now', 'Get now', 'Nhận ngay', 'Nhận'], ['span', 'div', 'button', 'p'], 2000);
+                                if (getBtnClicked) {
+                                    console.log('✅ Đã click thành công nút Get trên Dashboard.');
+                                    break;
+                                }
+                                const fallbackGet = document.querySelector('.get-btn, [class*="get-btn"], [id*="get-btn"]');
+                                if (fallbackGet) {
+                                    fallbackGet.click();
+                                    console.log('✅ Click Get fallback selector thành công');
+                                    getBtnClicked = true;
+                                    break;
+                                }
+                                await new Promise(r => setTimeout(r, 1000));
+                            }
                         }
 
                         const onPurchase = await waitForPurchaseDevicePage(15000);
                         if (!onPurchase) {
-                            window.location.href = targetUrl;
-                            const secondChance = await waitForPurchaseDevicePage(10000);
-                            if (!secondChance) throw new Error("Không chuyển hướng đến trang mua máy");
+                            console.log('🧭 Điều hướng trực tiếp sang purchaseDevice...');
+                            window.location.hash = '#/purchaseDevice';
+                            window.location.href = purchaseUrl;
+                            const secondChance = await waitForPurchaseDevicePage(12000);
+                            if (!secondChance) throw new Error("Không thể chuyển tới trang purchaseDevice");
                         }
 
                         console.log('⏳ Bước 1: Tìm và nhấp chọn khu vực Hong Kong...');
