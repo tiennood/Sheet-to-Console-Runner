@@ -2,7 +2,8 @@
 (function() {
     console.log('🚀 Script auto click mua máy (đã sửa - chờ gọi buyUG() hoặc postMessage)');
 
-    function waitForElement(options, timeout = 15000) {
+    // HÀM CHỜ PHẦN TỬ - CÓ THỂ BẠN CẦN SỬA SELECTOR Ở ĐÂY
+    async function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
             const { selector, text, tag = 'div', contains = true } = options;
             const start = Date.now();
@@ -79,6 +80,7 @@
         return false;
     }
 
+    // HÀM TÌM NÚT HONG KONG - CÓ THỂ CẦN SỬA TEXT HOẶC CLASS
     async function waitForHongKong(timeout = 30000) {
         const start = Date.now();
         while (Date.now() - start < timeout) {
@@ -99,11 +101,15 @@
         throw new Error("Timeout tìm Hong Kong");
     }
 
+    // HÀM TÌM NÚT GET - CÓ THỂ CẦN SỬA TEXT HOẶC SELECTOR
     async function waitForGetButton(timeout = 30000) {
         const start = Date.now();
         while (Date.now() - start < timeout) {
             const getBtn = await waitForElement({ text: 'Get', tag: 'span', contains: false }, 2000);
             if (getBtn) return getBtn;
+            // Fallback: tìm bằng class hoặc id
+            const fallback = document.querySelector('.get-btn, [id*="get"], [class*="get"]');
+            if (fallback && fallback.innerText.toLowerCase().includes('get')) return fallback;
             await new Promise(r => setTimeout(r, 1000));
         }
         throw new Error("Timeout tìm nút Get");
@@ -129,6 +135,7 @@
                 console.log('✅ Đã click Hong Kong');
             }
 
+            // Chọn card (có thể cần sửa selector)
             const cardClicked = await safeClick({ selector: '#active-card' }, 10000);
             if (!cardClicked) throw new Error("Không click được card");
 
