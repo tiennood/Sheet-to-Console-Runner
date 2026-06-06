@@ -1,4 +1,503 @@
-// ===================== UI TOOL - DÙNG JSON.STRINGIFY (REPLACER) =====================
+// ==========================================
+// 1. MODULE: REPLACE VM (Tự Động Thay Thiết Bị)
+// ==========================================
+(function() {
+    async function safeFetch(url, options, retries = 3, delay = 1000) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    if (response.status === 403) throw new Error("HTTP 403: Token hết hạn");
+                    throw new Error("HTTP " + response.status);
+                }
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) return await response.json();
+                const text = await response.text();
+                if (text.includes('<!DOCTYPE')) throw new Error("Server trả về HTML");
+                throw new Error("Response không phải JSON");
+            } catch(err) {
+                if (err.message.includes('403')) throw err;
+                if (i === retries - 1) throw err;
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+
+    async function fetchVMId(accessToken, loginId, webFingerprint, delayMs) {
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        const headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json;charset=UTF-8",
+            "access-token": accessToken,
+            "login-id": loginId,
+            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
+            "terminal": "web",
+            "lang": "vi",
+            "update-date": Date.now().toString()
+        };
+        const listData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
+            method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
+        });
+        if (listData.code !== 200) throw new Error("Lỗi list: " + listData.msg);
+        if (!listData.data?.list || !listData.data.list.length) throw new Error("Không có đơn hàng");
+        const orderId = listData.data.list[0].order_id;
+        const statusData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
+            method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
+        });
+        if (statusData.code !== 200) throw new Error("Lỗi status: " + statusData.msg);
+        const serviceIds = statusData.data.service_ids;
+        if (!serviceIds || !serviceIds.length) throw new Error("Không có service_ids");
+        const snapData = await safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
+            method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
+        });
+        if (snapData.code !== 200) throw new Error("Lỗi snapshot: " + snapData.msg);
+        if (!snapData.data?.list || !snapData.data.list.length) {
+            throw new Error("Không tìm thấy snapshot thiết bị. Có thể tài khoản chưa kích hoạt máy.");
+        }
+        const snapshotUrl = snapData.data.list[0].snapshot;
+        if (!snapshotUrl) {
+            throw new Error("Device snapshot URL rỗng.");
+        }
+        const fileName = snapshotUrl.split('/').pop() || "";
+        const vmId = fileName.split('.')[0] || "Unknown";
+        return { vmId, serviceId: serviceIds[0] };
+    }
+
+    async function replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs) {
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        const headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json;charset=UTF-8",
+            "access-token": accessToken,
+            "login-id": loginId,
+            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
+            "terminal": "web",
+            "lang": "vi",
+            "update-date": Date.now().toString()
+        };
+        const body = JSON.stringify({ service_id: serviceId, replace_reason: reasonId, reason: "" });
+        const data = await safeFetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
+            method: "POST", headers, body, credentials: "include"
+        });
+        if (data.code !== 200) throw new Error("Replace thất bại: " + data.msg);
+        return data;
+    }
+
+    function parseBlacklist(input) {
+        input = (input || "").trim();
+        if (!input) return new Set();
+        if (input.startsWith('[') && input.endsWith(']')) {
+            try {
+                const arr = JSON.parse(input);
+                if (Array.isArray(arr)) return new Set(arr.map(v => String(v).trim()));
+            } catch(e) {}
+        }
+        const items = input.split(/[,\s\n]+/).filter(s => s.trim().length > 0);
+        return new Set(items);
+    }
+
+    async function processAccount(accountJson, blacklistSet, reasonId, delayMs, index, resultsArray) {
+        try {
+            const jsonObj = typeof accountJson === 'string' ? JSON.parse(accountJson) : accountJson;
+            const accessToken = jsonObj['UGPHONE-Token'] || jsonObj['accessToken'];
+            const loginId = jsonObj['UGPHONE-ID'] || jsonObj['loginId'];
+            const webFingerprint = jsonObj['ugBrowserId'] || jsonObj['web-fingerprint'];
+            if (!accessToken || !loginId) throw new Error("Thiếu token/login-id");
+
+            const { vmId: oldVm, serviceId } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
+            const isBlacklisted = blacklistSet.has(oldVm);
+            let newVm = oldVm;
+            let action = isBlacklisted ? "Thay thế" : "Bỏ qua";
+            let error = "";
+
+            if (isBlacklisted) {
+                await replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs);
+                await new Promise(r => setTimeout(r, 2000));
+                const { vmId: freshVm } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
+                newVm = freshVm;
+            }
+            resultsArray.push({ index, oldVm, isBlacklisted, action, newVm, error, success: true });
+        } catch (err) {
+            resultsArray.push({ index, oldVm: "Lỗi", isBlacklisted: false, action: "Thất bại", newVm: "", error: err.message, success: false });
+        }
+    }
+
+    async function runReplacer(accounts, blacklistInput, delayMs = 3000, reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a") {
+        if (!accounts || !accounts.length) throw new Error("Danh sách accounts trống");
+        const blacklistSet = parseBlacklist(blacklistInput);
+        const results = [];
+        for (let i = 0; i < accounts.length; i++) {
+            await processAccount(accounts[i], blacklistSet, reasonId, delayMs, i, results);
+        }
+        return results;
+    }
+
+    function exportToCSV(results) {
+        let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
+        for (const r of results) {
+            csv += (r.index + 1) + "," + r.oldVm + "," + (r.isBlacklisted ? "Có" : "Không") + "," + r.action + "," + r.newVm + "," + r.error + "\n";
+        }
+        const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "ugphone_results.csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    window.UGPhoneReplacer = {
+        run: runReplacer,
+        parseBlacklist,
+        exportToCSV
+    };
+    console.log("✅ UGPhoneReplacer ready. Dùng: await UGPhoneReplacer.run(accounts, blacklist, delay, reasonId)");
+})();
+
+
+// ==========================================
+// 2. MODULE: BUY UG (Tự Động Mua Thiết Bị)
+// ==========================================
+(function() {
+    console.log('🚀 Script auto click mua máy (đã cải tiến - dùng text-matching & auto-wait-clickable)');
+
+    let activeIntervals = [];
+    function trackInterval(intervalId) {
+        activeIntervals.push(intervalId);
+        return intervalId;
+    }
+    function clearIntervalTracked(intervalId) {
+        clearInterval(intervalId);
+        activeIntervals = activeIntervals.filter(i => i !== intervalId);
+    }
+    function clearAllIntervals() {
+        activeIntervals.forEach(clearInterval);
+        activeIntervals = [];
+    }
+
+    async function waitForElement(options, timeout = 15000) {
+        return new Promise((resolve) => {
+            const { selector, text, tag = 'div', contains = true } = options;
+            const start = Date.now();
+            const interval = setInterval(() => {
+                let el = null;
+                if (selector) {
+                    el = document.querySelector(selector);
+                } else if (text) {
+                    const elements = document.querySelectorAll(tag);
+                    for (let e of elements) {
+                        const match = contains ? e.innerText.includes(text) : e.innerText.trim() === text;
+                        if (match) { el = e; break; }
+                    }
+                }
+                if (el) {
+                    clearIntervalTracked(interval);
+                    resolve(el);
+                } else if (Date.now() - start > timeout) {
+                    clearIntervalTracked(interval);
+                    resolve(null);
+                }
+            }, 200);
+            trackInterval(interval);
+        });
+    }
+
+    async function waitForClickable(options, timeout = 15000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            const el = await waitForElement(options, 2000);
+            if (el) {
+                const isDisabled = el.disabled || 
+                                   el.classList?.contains('van-button--disabled') || 
+                                   el.classList?.contains('van-button--loading') || 
+                                   el.getAttribute('aria-disabled') === 'true';
+                if (!isDisabled) {
+                    return el;
+                }
+            }
+            await new Promise(r => setTimeout(r, 200));
+        }
+        return null;
+    }
+
+    async function clickByTexts(listOfTexts, tagList = ['span', 'div', 'button', 'a', 'p'], timeout = 15000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            for (const tag of tagList) {
+                const elements = document.querySelectorAll(tag);
+                for (const el of elements) {
+                    if (!(el.offsetWidth > 0 || el.offsetHeight > 0)) continue;
+                    const textContent = (el.innerText || el.textContent || "").trim();
+                    for (const targetText of listOfTexts) {
+                        if (textContent === targetText || textContent.includes(targetText)) {
+                            const isDisabled = el.disabled || 
+                                               el.classList?.contains('van-button--disabled') || 
+                                               el.classList?.contains('van-button--loading');
+                            if (!isDisabled) {
+                                el.click();
+                                console.log("✅ Đã click: " + targetText + " (Tag: " + tag + ")");
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            await new Promise(r => setTimeout(r, 300));
+        }
+        return false;
+    }
+
+    async function ensureDashboardPage() {
+        const targetUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
+        const currentUrl = window.location.href;
+        if (currentUrl === targetUrl || currentUrl.includes('/dashboard/index')) {
+            console.log('✅ Đã đúng trang dashboard');
+            return true;
+        }
+        console.log("🧭 Đang tự động chuyển hướng đến trang dashboard: " + targetUrl + "...");
+        window.location.href = targetUrl;
+        throw new Error("Đang chuyển hướng trang web... Vui lòng chạy lại kịch bản sau khi trang load xong.");
+    }
+
+    async function waitForPurchaseDevicePage(timeout = 15000) {
+        console.log('⏳ Chờ chuyển đến trang /purchaseDevice...');
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            if (window.location.hash.includes('purchaseDevice') || 
+                window.location.pathname.includes('purchaseDevice')) {
+                console.log('✅ Đã vào đúng trang purchaseDevice');
+                await new Promise(r => setTimeout(r, 1000));
+                return true;
+            }
+            await new Promise(r => setTimeout(r, 500));
+        }
+        console.error('❌ Không chuyển được sang purchaseDevice');
+        return false;
+    }
+
+    async function run() {
+        const overallTimeout = 60000;
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+                clearAllIntervals();
+                reject(new Error("Overall timeout 60s"));
+            }, overallTimeout);
+        });
+        
+        const mainPromise = (async () => {
+            try {
+                console.log('🧭 Bắt đầu hành trình chuẩn bị phiên mua máy (Dashboard -> click "Get" -> Purchase)...');
+                const dashboardUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
+                const purchaseUrl = 'https://www.ugphone.com/toc-portal/#/purchaseDevice';
+
+                if (!window.location.href.includes('dashboard/index') && !window.location.href.includes('purchaseDevice')) {
+                    console.log('🧭 Điều hướng về trang Dashboard để chuẩn bị click nút Get...');
+                    window.location.hash = '#/dashboard/index';
+                    window.location.href = dashboardUrl;
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+
+                if (window.location.href.includes('dashboard/index')) {
+                    console.log('⏳ Chờ và xác định nút Get/Nhận máy trên Dashboard...');
+                    let getBtnClicked = false;
+                    for (let retry = 0; retry < 5; retry++) {
+                        getBtnClicked = await clickByTexts(['Get', 'Get Now', 'Get now', 'Nhận ngay', 'Nhận'], ['span', 'div', 'button', 'p'], 2000);
+                        if (getBtnClicked) {
+                            console.log('✅ Đã click thành công nút Get trên Dashboard.');
+                            break;
+                        }
+                        const fallbackGet = document.querySelector('.get-btn, [class*="get-btn"], [id*="get-btn"]');
+                        if (fallbackGet) {
+                            fallbackGet.click();
+                            console.log('✅ Click Get fallback selector thành công');
+                            getBtnClicked = true;
+                            break;
+                        }
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+
+                const isOnPurchasePage = await waitForPurchaseDevicePage(15000);
+                if (!isOnPurchasePage) {
+                    console.log('🧭 Điều hướng trực tiếp sang purchaseDevice...');
+                    window.location.hash = '#/purchaseDevice';
+                    window.location.href = purchaseUrl;
+                    const secondChance = await waitForPurchaseDevicePage(12000);
+                    if (!secondChance) throw new Error("Không thể chuyển tới trang purchaseDevice");
+                }
+
+                console.log('⏳ Bước 1: Tìm và nhấp chọn khu vực Hong Kong...');
+                await new Promise(r => setTimeout(r, 1000));
+                let hkRoomClicked = false;
+
+                for (let retry = 0; retry < 5; retry++) {
+                    console.log("🔎 Quét chọn Hong Kong (lần " + (retry + 1) + "/5)...");
+                    const roomItems = document.querySelectorAll('.room-item');
+                    console.log('📋 Danh sách các area/room tìm thấy:', Array.from(roomItems).map(el => (el.innerText || "").trim().replace(/\n/g, ' ')));
+
+                    let targetItem = null;
+                    for (let item of roomItems) {
+                        const txt = (item.innerText || "").toLowerCase();
+                        if (txt.includes('hong') || txt.includes('hk')) {
+                            targetItem = item;
+                            break;
+                        }
+                    }
+
+                    if (targetItem) {
+                        console.log('👉 Định vị được room-item mong muốn:', targetItem.innerText.trim());
+                        targetItem.scrollIntoView({ block: 'center', inline: 'center' });
+                        await new Promise(r => setTimeout(r, 500));
+                        
+                        // Click directly on the element
+                        targetItem.click();
+                        
+                        // Click inner elements to guarantee event activation
+                        const innerElements = targetItem.querySelectorAll('span, div, p');
+                        for (let child of innerElements) {
+                            child.click();
+                        }
+                        console.log('✅ Đã tác động click lên room-item và các con.');
+                        hkRoomClicked = true;
+                    } else {
+                        hkRoomClicked = await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p', 'h3'], 1500);
+                    }
+
+                    // Chờ 1 giây xem UI cập nhật danh sách các price cards (gói) tương ứng hay chưa
+                    await new Promise(r => setTimeout(r, 1000));
+
+                    const currentPrices = document.querySelectorAll('.price-item, .card-item');
+                    let hasHkPrice = false;
+                    for (let p of currentPrices) {
+                        const priceTxt = (p.innerText || "").toLowerCase();
+                        if (priceTxt.includes('hong') || priceTxt.includes('hk')) {
+                            hasHkPrice = true;
+                            break;
+                        }
+                    }
+
+                    if (hasHkPrice) {
+                        console.log('🎉 Phòng Hong Kong hoạt động và đồng bộ gói thành công!');
+                        break;
+                    } else {
+                        console.warn('⚠️ Cảnh báo: UI chưa cập nhật gói cho Hong Kong. Thử kích hoạt lại...');
+                    }
+                }
+
+                if (!hkRoomClicked) {
+                    console.warn('⚠️ Cảnh báo cực hạn: Không kích hoạt được Hong Kong, dùng fallback phần tử thô đầu tiên...');
+                    const rawHk = document.querySelector('.room-item');
+                    if (rawHk) {
+                        rawHk.scrollIntoView({ block: 'center', inline: 'center' });
+                        await new Promise(r => setTimeout(r, 500));
+                        rawHk.click();
+                        hkRoomClicked = true;
+                    }
+                }
+
+                console.log('⏳ Bước 2: Chọn gói liên đới (UVIP Hong Kong - 250 Diamond - 4-Hour Free Trial)...');
+                await new Promise(r => setTimeout(r, 1000));
+                let cardClicked = false;
+                const priceItems = document.querySelectorAll('.price-item, .card-item, #active-card');
+                for (let item of priceItems) {
+                    const text = item.innerText || "";
+                    if (text.includes('250') && (text.includes('UVIP') || text.includes('New Users') || text.includes('Free Trial') || text.includes('Hong Kong'))) {
+                        item.click();
+                        console.log('✅ Click price-item chọn gói:', text.trim().replace(/\s+/g, ' '));
+                        cardClicked = true;
+                        break;
+                    }
+                }
+                if (!cardClicked) {
+                    const activeCardEl = document.querySelector('.active-card, #active-card');
+                    if (activeCardEl) { activeCardEl.click(); cardClicked = true; console.log('✅ Click class active-card fallback'); }
+                }
+                if (!cardClicked) {
+                    cardClicked = await clickByTexts(['250Diamond', '250 Kim Cương', '1 Day', '1 Ngày', '250'], ['span', 'div', 'p', 'h3', 'h4']);
+                }
+
+                console.log('⏳ Bước 3: Ấn nút Buy hoặc Buy Now...');
+                await new Promise(r => setTimeout(r, 1000));
+                const buyBtnClicked = await clickByTexts(['Buy', 'Buy Now', 'Mua', 'Mua ngay'], ['span', 'button', 'div', 'p']);
+                if (!buyBtnClicked) {
+                    const fallbackBuy = document.querySelector('#buy-btn, .buy-btn, [class*="buy-btn"]');
+                    if (fallbackBuy) { fallbackBuy.click(); console.log('✅ Click fallback button Buy'); }
+                    else throw new Error("Không thấy nút bấm Mua");
+                }
+
+                console.log('⏳ Bước 4: Chờ màn thanh toán và đối chiếu thông tin...');
+                await new Promise(r => setTimeout(r, 2000));
+                
+                // Đối soát và xác thực nội dung hạch toán trong .info-box
+                const infoBox = document.querySelector('.info-box, [class*="info-box"]');
+                if (infoBox) {
+                    const txt = infoBox.innerText || "";
+                    console.log('📄 Nội dung hóa đơn nhận diện được:\n' + txt);
+                    const checkUvip = txt.includes('UVIP');
+                    const checkHk = txt.includes('Hong Kong') || txt.includes('HK');
+                    if (checkUvip && checkHk) {
+                        console.log('✅ Xác minh Buying items: UVIP, Server: Hong Kong hoàn toàn chuẩn xác.');
+                    } else {
+                        console.warn('⚠️ Cảnh báo: Thông tin hóa đơn thanh toán có thể không khớp hoàn toàn.');
+                    }
+                } else {
+                    console.log('ℹ️ Không có .info-box, bỏ qua bước kiểm chứng thô.');
+                }
+
+                console.log('⏳ Bước 5: Kích hoạt đảm bảo chọn "Use 250Diamond Payment" trước khi nhấp Pay...');
+                // Nhấp chọn phương thức thanh toán
+                const paySel = document.querySelector('#pay-free-sel') || 
+                                await waitForElement({ text: 'Use 250Diamond Payment', tag: 'div' }, 3000) ||
+                                await waitForElement({ text: 'Diamond Payment', tag: 'div' }, 3000);
+                if (paySel) {
+                    paySel.click();
+                    console.log('✅ Đã chọn/click phương thức thanh toán Diamond.');
+                } else {
+                    await clickByTexts(['Use 250Diamond Payment', '250Diamond', 'Diamond Payment', 'Diamond'], ['span', 'div', 'p', 'label']);
+                }
+
+                console.log('⏳ Bước 6: Xác nhận thanh toán (Pay button)...');
+                await new Promise(r => setTimeout(r, 1000));
+                
+                // Chờ và click nút xác nhận thanh toán cuối cùng
+                const payBtnEl = await waitForClickable({ text: 'Pay', tag: 'button' }, 10000) || 
+                                 await waitForClickable({ text: 'Thanh toán', tag: 'button' }, 5000) ||
+                                 await waitForClickable({ text: 'Xác nhận', tag: 'button' }, 5000);
+                                 
+                if (payBtnEl) {
+                    payBtnEl.click();
+                    console.log('💰 ĐÃ KÍCH HOẠT THANH TOÁN THÀNH CÔNG!');
+                } else {
+                    const finalPay = await clickByTexts(['Pay', 'Thanh toán', 'Confirm', 'Xác nhận', 'Pay Now'], ['span', 'button', 'div']);
+                    if (finalPay) console.log('💰 Đã click thanh toán!');
+                    else console.warn('⚠️ Không tìm được nút Pay khả dụng');
+                }
+                
+                console.log('🏁 Kết thúc kịch bản mua tự động thành công');
+            } catch(err) {
+                console.error('❌ Thất bại:', err.message);
+            } finally {
+                clearAllIntervals();
+            }
+        })();
+
+        await Promise.race([mainPromise, timeoutPromise]);
+    }
+
+    window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'RUN_BUY_UG') {
+            console.log('📩 Nhận lệnh mua máy từ popup');
+            run().catch(console.error);
+        }
+    });
+
+    window.buyUG = run;
+    console.log("✅ Buy UG script loaded. Dùng await buyUG() để chạy mua máy.");
+})();
+
+
+// ==========================================
+// 3. MODULE: UI TOOL (Popup Giao Diện Tổng Hợp)
+// ==========================================
 (function() {
     // CoreAPI với khai báo hàm chuẩn để tránh lỗi eval viết tắt ES6
     const CoreAPI = {
@@ -6,7 +505,7 @@
             for (let i = 0; i < retries; i++) {
                 try {
                     const res = await fetch(url, options);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    if (!res.ok) throw new Error("HTTP " + res.status);
                     const contentType = res.headers.get('content-type');
                     if (contentType && contentType.includes('application/json')) return await res.json();
                     throw new Error("Response không phải JSON");
@@ -80,7 +579,7 @@
     // HTML của popup (giao diện + logic)
     const html = `<!DOCTYPE html>
 <html>
-<head><title>UGphone Tool - Tổng hợp</title>
+<head><title>UGphone Tool - Tổng hợp (Bản hợp nhất)</title>
 <style>
     *{box-sizing:border-box}
     body{margin:0;background:#1a1a1a;color:#eee;font-family:Segoe UI,sans-serif;font-size:12px;height:100vh;overflow:hidden}
@@ -139,7 +638,7 @@
 <script>
     // Khôi phục CoreAPI từ chuỗi JSON
     const CoreAPI = (function() {
-        const obj = \${coreAPIStr};
+        const obj = ${coreAPIStr};
         const restored = {};
         for (let key in obj) {
             if (typeof obj[key] === 'string' && (obj[key].includes('async') || obj[key].includes('function'))) {
@@ -404,7 +903,7 @@
                         for (let retry = 0; retry < 5; retry++) {
                             console.log('🔎 Quét chọn Hong Kong (lần ' + (retry + 1) + '/5)...');
                             const roomItems = document.querySelectorAll('.room-item');
-                            console.log('📋 Danh sách các area/room tìm thấy:', Array.from(roomItems).map(el => (el.innerText || "").trim().split('\n').join(' ')));
+                            console.log('📋 Danh sách các area/room tìm thấy:', Array.from(roomItems).map(el => (el.innerText || "").trim().split('\\n').join(' ')));
 
                             let targetItem = null;
                             for (let item of roomItems) {
@@ -474,7 +973,7 @@
                             const text = item.innerText || "";
                             if (text.includes('250') && (text.includes('UVIP') || text.includes('New Users') || text.includes('Free Trial') || text.includes('Hong Kong'))) {
                                 item.click();
-                                console.log('✅ Click price-item chọn gói:', text.trim().replace(/\\\\s+/g, ' '));
+                                console.log('✅ Click price-item chọn gói:', text.trim().replace(/\\s+/g, ' '));
                                 cardClicked = true;
                                 break;
                             }
@@ -501,7 +1000,7 @@
                         const infoBox = document.querySelector('.info-box, [class*="info-box"]');
                         if (infoBox) {
                             const txt = infoBox.innerText || "";
-                            console.log('📄 Nội dung hóa đơn nhận diện được:\\\\n' + txt);
+                            console.log('📄 Nội dung hóa đơn nhận diện được:\\n' + txt);
                             const checkUvip = txt.includes('UVIP');
                             const checkHk = txt.includes('Hong Kong') || txt.includes('HK');
                             if (checkUvip && checkHk) {
