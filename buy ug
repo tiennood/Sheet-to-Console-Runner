@@ -1,6 +1,6 @@
-// ===================== BUY UG (auto-click đã sửa lỗi) =====================
+// ===================== BUY UG (auto-click, KHÔNG tự động chạy) =====================
 (function() {
-    console.log('🚀 Script auto click mua máy (đã sửa lỗi)');
+    console.log('🚀 Script auto click mua máy (đã sửa - chờ lệnh gọi)');
 
     function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
@@ -144,7 +144,7 @@
                 else console.warn('⚠️ Không click được Pay');
             } else {
                 console.warn('⚠️ Không tìm thấy #pay-free-sel hoặc text sai, thử click Pay bằng selector khác');
-                await safeClick({ selector: 'button:contains("Pay")' }, 5000); // fallback
+                await safeClick({ selector: 'button:contains("Pay")' }, 5000);
             }
             console.log('🏁 Kết thúc thành công');
         })();
@@ -152,6 +152,7 @@
         await Promise.race([mainPromise, timeoutPromise]);
     }
 
-    // Chạy và bắt lỗi tổng thể
-    run().catch(err => console.error("❌ Lỗi:", err.message));
+    // Export ra global để gọi từ UI Tool hoặc console
+    window.buyUG = run;
+    console.log("✅ Buy UG script loaded. Dùng await buyUG() để chạy mua máy.");
 })();
