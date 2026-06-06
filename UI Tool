@@ -610,15 +610,15 @@
                 if (!acc) return;
                 updateBtn.innerText = '🔄 Chờ...';
                 updateBtn.disabled = true;
-                addLog(`⏳ Đang cập nhật riêng lẻ cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
+                addLog('⏳ Đang cập nhật riêng lẻ cho: ' + (acc['UGPHONE-ID'] || acc.loginId));
                 blackSet = parseBlacklist(document.getElementById('blacklistInput').value);
                 try {
                     const res = await processAccount(acc, idx, false);
                     lastResults[idx] = res;
-                    addLog(`✅ Cập nhật riêng lẻ thành công cho: ` + (acc['UGPHONE-ID'] || acc.loginId));
+                    addLog('✅ Cập nhật riêng lẻ thành công cho: ' + (acc['UGPHONE-ID'] || acc.loginId));
                 } catch(e) {
                     lastResults[idx] = { loginId: acc['UGPHONE-ID'] || acc.loginId, error: e.message };
-                    addLog(`❌ Lỗi cập nhật cho ` + (acc['UGPHONE-ID'] || acc.loginId) + `: ` + e.message, true);
+                    addLog('❌ Lỗi cập nhật cho ' + (acc['UGPHONE-ID'] || acc.loginId) + ': ' + e.message, true);
                 }
                 renderResults();
             }).bind(null, i);
@@ -641,11 +641,11 @@
             deleteBtn.style.cssText = 'background:#ef4444; border:none; color:white; padding:2px 6px; font-size:10px; border-radius:4px;';
             deleteBtn.onclick = ((idx) => {
                 const targetId = lastAccounts[idx] ? (lastAccounts[idx]['UGPHONE-ID'] || lastAccounts[idx].loginId) : '?';
-                if (confirm(`Bạn có chắc muốn xóa tài khoản "${targetId}" khỏi bảng danh sách này không?`)) {
+                if (confirm('Bạn có chắc muốn xóa tài khoản "' + targetId + '" khỏi bảng danh sách này không?')) {
                     lastAccounts.splice(idx, 1);
                     lastResults.splice(idx, 1);
                     renderResults();
-                    addLog(`❌ Đã xóa dòng tài khoản: ` + targetId);
+                    addLog('❌ Đã xóa dòng tài khoản: ' + targetId);
                 }
             }).bind(null, i);
 
