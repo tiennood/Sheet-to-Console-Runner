@@ -1,5 +1,80 @@
+// ===================== REPLACE VM (đã sửa lỗi, độc lập) =====================
 (function() {
-    // -------------------- GIỮ NGUYÊN CÁC HÀM XỬ LÝ --------------------
+    // Helper safeFetch với retry
+    async function safeFetch(url, options, retries = 3, delay = 1000) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    if (response.status === 403) throw new Error("HTTP 403: Token hết hạn");
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) return await response.json();
+                const text = await response.text();
+                if (text.includes('<!DOCTYPE')) throw new Error("Server trả về HTML");
+                throw new Error("Response không phải JSON");
+            } catch(err) {
+                if (err.message.includes('403')) throw err;
+                if (i === retries - 1) throw err;
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+
+    async function fetchVMId(accessToken, loginId, webFingerprint, delayMs) {
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        const headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json;charset=UTF-8",
+            "access-token": accessToken,
+            "login-id": loginId,
+            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
+            "terminal": "web",
+            "lang": "vi",
+            "update-date": Date.now().toString()
+        };
+        const listData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
+            method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
+        });
+        if (listData.code !== 200) throw new Error(`Lỗi list: ${listData.msg}`);
+        if (!listData.data.list.length) throw new Error("Không có đơn hàng");
+        const orderId = listData.data.list[0].order_id;
+        const statusData = await safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
+            method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
+        });
+        if (statusData.code !== 200) throw new Error(`Lỗi status: ${statusData.msg}`);
+        const serviceIds = statusData.data.service_ids;
+        if (!serviceIds || !serviceIds.length) throw new Error("Không có service_ids");
+        const snapData = await safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
+            method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
+        });
+        if (snapData.code !== 200) throw new Error(`Lỗi snapshot: ${snapData.msg}`);
+        const snapshotUrl = snapData.data.list[0].snapshot;
+        const vmId = snapshotUrl.split('/').pop().split('.')[0];
+        return { vmId, serviceId: serviceIds[0] };
+    }
+
+    async function replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs) {
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        const headers = {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json;charset=UTF-8",
+            "access-token": accessToken,
+            "login-id": loginId,
+            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
+            "terminal": "web",
+            "lang": "vi",
+            "update-date": Date.now().toString()
+        };
+        const body = JSON.stringify({ service_id: serviceId, replace_reason: reasonId, reason: "" });
+        const data = await safeFetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
+            method: "POST", headers, body, credentials: "include"
+        });
+        if (data.code !== 200) throw new Error(`Replace thất bại: ${data.msg}`);
+        return data;
+    }
+
     function parseBlacklist(input) {
         input = (input || "").trim();
         if (!input) return new Set();
@@ -13,70 +88,9 @@
         return new Set(items);
     }
 
-    async function fetchVMId(accessToken, loginId, webFingerprint, delayMs) {
-        if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
-        const headers = {
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json;charset=UTF-8",
-            "access-token": accessToken,
-            "login-id": loginId,
-            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
-            "terminal": "web",
-            "lang": "vi",
-            "update-date": Date.now().toString()
-        };
-        try {
-            const listRes = await fetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
-                method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
-            });
-            const listData = await listRes.json();
-            if (listData.code !== 200) throw new Error(`Lỗi list: ${listData.msg}`);
-            if (!listData.data.list.length) throw new Error("Không có đơn hàng");
-            const orderId = listData.data.list[0].order_id;
-            const statusRes = await fetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
-                method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
-            });
-            const statusData = await statusRes.json();
-            if (statusData.code !== 200) throw new Error(`Lỗi status: ${statusData.msg}`);
-            const serviceIds = statusData.data.service_ids;
-            if (!serviceIds || !serviceIds.length) throw new Error("Không có service_ids");
-            const snapRes = await fetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
-                method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
-            });
-            const snapData = await snapRes.json();
-            if (snapData.code !== 200) throw new Error(`Lỗi snapshot: ${snapData.msg}`);
-            const snapshotUrl = snapData.data.list[0].snapshot;
-            const vmId = snapshotUrl.split('/').pop().split('.')[0];
-            return { vmId, serviceId: serviceIds[0] };
-        } catch (err) {
-            throw new Error(err.message);
-        }
-    }
-
-    async function replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs) {
-        if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
-        const headers = {
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json;charset=UTF-8",
-            "access-token": accessToken,
-            "login-id": loginId,
-            "web-fingerprint": webFingerprint || "0742f9ecfe480939f8d215d6db7ebedf",
-            "terminal": "web",
-            "lang": "vi",
-            "update-date": Date.now().toString()
-        };
-        const body = JSON.stringify({ service_id: serviceId, replace_reason: reasonId, reason: "" });
-        const res = await fetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
-            method: "POST", headers, body, credentials: "include"
-        });
-        const data = await res.json();
-        if (data.code !== 200) throw new Error(`Replace thất bại: ${data.msg}`);
-        return data;
-    }
-
     async function processAccount(accountJson, blacklistSet, reasonId, delayMs, index, resultsArray) {
         try {
-            let jsonObj = typeof accountJson === 'string' ? JSON.parse(accountJson) : accountJson;
+            const jsonObj = typeof accountJson === 'string' ? JSON.parse(accountJson) : accountJson;
             const accessToken = jsonObj['UGPHONE-Token'] || jsonObj['accessToken'];
             const loginId = jsonObj['UGPHONE-ID'] || jsonObj['loginId'];
             const webFingerprint = jsonObj['ugBrowserId'] || jsonObj['web-fingerprint'];
@@ -100,7 +114,6 @@
         }
     }
 
-    // -------------------- HÀM CHẠY CHÍNH (KHÔNG UI) --------------------
     async function runReplacer(accounts, blacklistInput, delayMs = 3000, reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a") {
         if (!accounts || !accounts.length) throw new Error("Danh sách accounts trống");
         const blacklistSet = parseBlacklist(blacklistInput);
@@ -111,36 +124,24 @@
         return results;
     }
 
-    // Xuất ra global để dùng từ console
+    function exportToCSV(results) {
+        let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
+        for (const r of results) {
+            csv += `${r.index+1},${r.oldVm},${r.isBlacklisted ? "Có" : "Không"},${r.action},${r.newVm},${r.error}\n`;
+        }
+        const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "ugphone_results.csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
     window.UGPhoneReplacer = {
         run: runReplacer,
         parseBlacklist,
-        // Hàm export CSV
-        exportToCSV: (results) => {
-            let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
-            for (const r of results) {
-                csv += `${r.index+1},${r.oldVm},${r.isBlacklisted ? "Có" : "Không"},${r.action},${r.newVm},${r.error}\n`;
-            }
-            const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = "ugphone_results.csv";
-            a.click();
-            URL.revokeObjectURL(a.href);
-        }
+        exportToCSV
     };
 
-    // Tự động chạy nếu có sẵn dữ liệu toàn cục (tuỳ chọn)
-    if (window.ugphoneAccounts && window.ugphoneAccounts.length) {
-        (async () => {
-            const accounts = window.ugphoneAccounts;
-            const blacklist = window.ugphoneBlacklist || "";
-            const delay = window.ugphoneDelay || 3000;
-            const reason = window.ugphoneReasonId || "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
-            console.log("🔁 Tự động chạy UGPhone Replacer (không UI)");
-            const results = await runReplacer(accounts, blacklist, delay, reason);
-            console.table(results);
-            if (window.ugphoneAutoExport) window.UGPhoneReplacer.exportToCSV(results);
-        })();
-    }
+    console.log("✅ UGPhoneReplacer ready. Dùng: await UGPhoneReplacer.run(accounts, blacklist, delay, reasonId)");
 })();

@@ -1,12 +1,12 @@
-(function autoClickFixed() {
-    console.log('🚀 Script auto click (sửa lỗi tìm Hong Kong, chỉ kiểm tra #pay-free-sel)');
+// ===================== BUY UG (auto-click đã sửa lỗi) =====================
+(function() {
+    console.log('🚀 Script auto click mua máy (đã sửa lỗi)');
 
-    // Helper: chờ phần tử xuất hiện (không loop vô hạn, có timeout)
-    function waitForElement(options) {
+    function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
-            const { selector, text, tag = 'div', timeout = 15000, contains = true, interval = 200 } = options;
+            const { selector, text, tag = 'div', contains = true } = options;
             const start = Date.now();
-            const checkInterval = setInterval(() => {
+            const interval = setInterval(() => {
                 let el = null;
                 if (selector) {
                     el = document.querySelector(selector);
@@ -14,25 +14,22 @@
                     const elements = document.querySelectorAll(tag);
                     for (let e of elements) {
                         const match = contains ? e.innerText.includes(text) : e.innerText.trim() === text;
-                        if (match) {
-                            el = e;
-                            break;
-                        }
+                        if (match) { el = e; break; }
                     }
                 }
                 if (el) {
-                    clearInterval(checkInterval);
+                    clearInterval(interval);
                     resolve(el);
                 } else if (Date.now() - start > timeout) {
-                    clearInterval(checkInterval);
+                    clearInterval(interval);
                     resolve(null);
                 }
-            }, interval);
+            }, 200);
         });
     }
 
-    async function safeClick(options) {
-        const el = await waitForElement(options);
+    async function safeClick(options, timeout = 15000) {
+        const el = await waitForElement(options, timeout);
         if (!el) {
             console.log(`❌ Không tìm thấy: ${options.text || options.selector}`);
             return false;
@@ -46,7 +43,6 @@
         return true;
     }
 
-    // Đảm bảo đang ở trang dashboard, nếu không thì chuyển hướng
     async function ensureDashboardPage() {
         const targetUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
         const currentUrl = window.location.href;
@@ -56,24 +52,21 @@
         }
         console.log(`⚠️ Đang ở ${currentUrl}, chuyển sang dashboard...`);
         window.location.href = targetUrl;
-        // Chờ trang mới load và DOM sẵn sàng
         return new Promise((resolve) => {
             const checkInterval = setInterval(() => {
                 if (window.location.href === targetUrl) {
                     clearInterval(checkInterval);
                     console.log('✅ Đã chuyển xong sang dashboard');
-                    // Chờ thêm 1.5s để React render
                     setTimeout(() => resolve(true), 1500);
                 }
             }, 500);
         });
     }
 
-    // Chờ URL hoặc DOM của trang purchaseDevice
-    async function waitForPurchaseDevicePage() {
+    async function waitForPurchaseDevicePage(timeout = 15000) {
         console.log('⏳ Chờ chuyển đến trang /purchaseDevice...');
         const start = Date.now();
-        while (Date.now() - start < 15000) {
+        while (Date.now() - start < timeout) {
             if (window.location.hash.includes('purchaseDevice') || 
                 window.location.pathname.includes('purchaseDevice')) {
                 console.log('✅ Đã vào đúng trang purchaseDevice');
@@ -86,10 +79,9 @@
         return false;
     }
 
-    // Loop mỗi 2s để tìm nút Hong Kong
-    async function waitForHongKong() {
-        console.log('⏳ Đợi nút Hong Kong xuất hiện (kiểm tra mỗi 2s)...');
-        while (true) {
+    async function waitForHongKong(timeout = 30000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
             const items = document.querySelectorAll('.room-item');
             let hkItem = null;
             for (let item of items) {
@@ -99,80 +91,67 @@
                 }
             }
             if (hkItem) {
-                if (!hkItem.classList.contains('active-btn')) {
-                    console.log('✅ Tìm thấy Hong Kong (chưa active)');
-                    return { element: hkItem, needClick: true };
-                } else {
-                    console.log('✅ Hong Kong đã active, không cần click');
-                    return { element: hkItem, needClick: false };
-                }
+                const needClick = !hkItem.classList.contains('active-btn');
+                return { element: hkItem, needClick };
             }
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 1000));
         }
+        throw new Error("Timeout tìm Hong Kong");
     }
 
-    // Chờ nút Get xuất hiện (kiểm tra mỗi 2s)
-    async function waitForGetButton() {
-        console.log('⏳ Đợi nút Get xuất hiện (kiểm tra mỗi 2s)...');
-        while (true) {
-            const getBtn = await waitForElement({ text: 'Get', tag: 'span', contains: false, timeout: 0 }); // timeout 0 nghĩa là không giới hạn trong lần gọi này, nhưng trong vòng lặp sẽ tự retry
-            if (getBtn) {
-                console.log('✅ Tìm thấy nút Get');
-                return getBtn;
-            }
-            await new Promise(r => setTimeout(r, 2000));
+    async function waitForGetButton(timeout = 30000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            const getBtn = await waitForElement({ text: 'Get', tag: 'span', contains: false }, 2000);
+            if (getBtn) return getBtn;
+            await new Promise(r => setTimeout(r, 1000));
         }
+        throw new Error("Timeout tìm nút Get");
     }
 
     async function run() {
-        // 0. Đảm bảo đang ở dashboard
-        await ensureDashboardPage();
+        const overallTimeout = 60000; // 60 giây tổng
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Overall timeout 60s")), overallTimeout));
+        
+        const mainPromise = (async () => {
+            await ensureDashboardPage();
+            const getButton = await waitForGetButton();
+            if (getButton.disabled) console.warn('⚠️ Nút Get đang disabled, vẫn thử click');
+            getButton.click();
+            console.log('✅ Click Get');
 
-        // 1. Chờ và click Get (lặp mỗi 2s cho đến khi xuất hiện)
-        const getButton = await waitForGetButton();
-        if (getButton.disabled || getButton.classList?.contains('van-button--disabled')) {
-            console.log('⚠️ Nút Get đang bị disabled, vẫn thử click');
-        }
-        getButton.click();
-        console.log('✅ Click Get');
+            const isOnPurchasePage = await waitForPurchaseDevicePage();
+            if (!isOnPurchasePage) throw new Error("Không thể vào trang purchaseDevice");
 
-        // 2. Đợi trang purchaseDevice load
-        const isOnPurchasePage = await waitForPurchaseDevicePage();
-        if (!isOnPurchasePage) {
-            console.error('❌ Không thể vào trang purchaseDevice, dừng script');
-            return;
-        }
+            const { element: hkEl, needClick } = await waitForHongKong();
+            if (needClick) {
+                hkEl.click();
+                console.log('✅ Đã click Hong Kong');
+            }
 
-        // 3. Xử lý Hong Kong
-        const { element: hkEl, needClick } = await waitForHongKong();
-        if (needClick) {
-            hkEl.click();
-            console.log('✅ Đã click Hong Kong');
-        }
+            const cardClicked = await safeClick({ selector: '#active-card' }, 10000);
+            if (!cardClicked) throw new Error("Không click được card");
 
-        // 4. Click UVIP card
-        await safeClick({ selector: '#active-card', timeout: 10000 });
+            const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)' }, 15000);
+            if (!buyClicked) throw new Error("Không click được Buy");
 
-        // 5. Click Buy
-        const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)', timeout: 15000 });
-        if (!buyClicked) {
-            console.error('❌ Không thể click Buy, dừng lại');
-            return;
-        }
-        console.log('Đã click Buy, chờ màn thanh toán...');
+            console.log('Đã click Buy, chờ màn thanh toán...');
+            const payFree = await waitForElement({ selector: '#pay-free-sel' }, 20000);
+            if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
+                console.log('✅ #pay-free-sel đã xuất hiện');
+                const payClicked = await safeClick({ text: 'Pay', tag: 'button' }, 10000);
+                if (payClicked) console.log('💰 Đã thanh toán!');
+                else console.warn('⚠️ Không click được Pay');
+            } else {
+                console.warn('⚠️ Không tìm thấy #pay-free-sel hoặc text sai, thử click Pay bằng selector khác');
+                await safeClick({ selector: 'button:contains("Pay")' }, 5000); // fallback
+            }
+            console.log('🏁 Kết thúc thành công');
+        })();
 
-        // 6. Chờ #pay-free-sel
-        const payFree = await waitForElement({ selector: '#pay-free-sel', timeout: 20000 });
-        if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
-            console.log('✅ #pay-free-sel đã xuất hiện với text đúng');
-            await safeClick({ text: 'Pay', tag: 'button', timeout: 10000 });
-            console.log('💰 Đã thanh toán!');
-        } else {
-            console.error('❌ Không tìm thấy #pay-free-sel hoặc text sai, không click Pay');
-        }
-
-        console.log('🏁 Kết thúc.');
+        await Promise.race([mainPromise, timeoutPromise]);
     }
 
-    run();
+    // Chạy và bắt lỗi tổng thể
+    run().catch(err => console.error("❌ Lỗi:", err.message));
 })();

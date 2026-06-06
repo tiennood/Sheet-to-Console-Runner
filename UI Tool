@@ -1,9 +1,72 @@
+// ===================== UI TOOL (đã sửa lỗi CoreAPI) =====================
 (function() {
-    // ------------------------------
-    // 1. CORE LOGIC (xử lý API, mua máy) - giữ nguyên
-    // ------------------------------
+    // Định nghĩa CoreAPI ngay trong popup (dựa trên code gốc của bạn)
     const CoreAPI = {
-        getBuyScript: function() {
+        async safeFetch(url, options, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        if (response.status === 403) throw new Error("HTTP 403: Token hết hạn");
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) return await response.json();
+                    const text = await response.text();
+                    if (text.includes('<!DOCTYPE')) throw new Error("Server trả về HTML");
+                    throw new Error("Response không phải JSON");
+                } catch(err) {
+                    if (err.message.includes('403')) throw err;
+                    if (i === retries - 1) throw err;
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+        },
+
+        async fetchVMId(accessToken, loginId, fp, delay) {
+            if (delay) await new Promise(r => setTimeout(r, delay));
+            const headers = {
+                "accept": "application/json", "content-type": "application/json;charset=UTF-8",
+                "access-token": accessToken, "login-id": loginId,
+                "web-fingerprint": fp || "0742f9ecfe480939f8d215d6db7ebedf",
+                "terminal": "web", "lang": "vi", "update-date": Date.now()
+            };
+            const listData = await this.safeFetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
+                method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
+            });
+            if (listData.code !== 200) throw new Error("Lỗi list: " + listData.msg);
+            if (!listData.data.list.length) throw new Error("Chưa có VM");
+            const orderId = listData.data.list[0].order_id;
+            const statusData = await this.safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
+                method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
+            });
+            if (statusData.code !== 200) throw new Error("Lỗi status: " + statusData.msg);
+            const serviceIds = statusData.data.service_ids;
+            if (!serviceIds.length) throw new Error("Không có service_ids");
+            const snapData = await this.safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
+                method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
+            });
+            if (snapData.code !== 200) throw new Error("Lỗi snapshot: " + snapData.msg);
+            const vmId = snapData.data.list[0].snapshot.split('/').pop().split('.')[0];
+            return { vmId, serviceId: serviceIds[0] };
+        },
+
+        async replaceDevice(accessToken, loginId, fp, serviceId, reasonId, delay) {
+            if (delay) await new Promise(r => setTimeout(r, delay));
+            const headers = {
+                "accept": "application/json", "content-type": "application/json;charset=UTF-8",
+                "access-token": accessToken, "login-id": loginId,
+                "web-fingerprint": fp || "0742f9ecfe480939f8d215d6db7ebedf",
+                "terminal": "web", "lang": "vi", "update-date": Date.now()
+            };
+            const data = await this.safeFetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
+                method: "POST", headers, body: JSON.stringify({ service_id: serviceId, replace_reason: reasonId, reason: "" }), credentials: "include"
+            });
+            if (data.code !== 200) throw new Error("Replace thất bại: " + data.msg);
+            return data;
+        },
+
+        getBuyScript() {
             return `
                 (async function() {
                     const CONFIG = { REGION: 'Hong Kong', AUTO_PAY: true, TIMEOUT: 30000 };
@@ -206,85 +269,6 @@
             `;
         },
 
-        async safeFetch(url, options, retries = 3, delay = 1000) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) {
-                        if (response.status === 403) throw new Error("HTTP 403: Token hết hạn");
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-                    const contentType = response.headers.get('content-type');
-                    if (contentType && contentType.includes('application/json')) return await response.json();
-                    const text = await response.text();
-                    if (text.includes('<!DOCTYPE')) throw new Error("Server trả về HTML");
-                    throw new Error("Response không phải JSON");
-                } catch(err) {
-                    if (err.message.includes('403')) throw err;
-                    if (i === retries - 1) throw err;
-                    await new Promise(r => setTimeout(r, delay));
-                }
-            }
-        },
-
-        async fetchVMId(accessToken, loginId, fp, delay) {
-            if (delay) await new Promise(r => setTimeout(r, delay));
-            const headers = {
-                "accept": "application/json", "content-type": "application/json;charset=UTF-8",
-                "access-token": accessToken, "login-id": loginId,
-                "web-fingerprint": fp || "0742f9ecfe480939f8d215d6db7ebedf",
-                "terminal": "web", "lang": "vi", "update-date": Date.now()
-            };
-            const listData = await this.safeFetch("https://www.ugphone.com/api/apiv1/order/orderRecordList", {
-                method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
-            });
-            if (listData.code !== 200) throw new Error("Lỗi list: " + listData.msg);
-            if (!listData.data.list.length) throw new Error("Chưa có VM");
-            const orderId = listData.data.list[0].order_id;
-            const statusData = await this.safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
-                method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
-            });
-            if (statusData.code !== 200) throw new Error("Lỗi status: " + statusData.msg);
-            const serviceIds = statusData.data.service_ids;
-            if (!serviceIds.length) throw new Error("Không có service_ids");
-            const snapData = await this.safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
-                method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
-            });
-            if (snapData.code !== 200) throw new Error("Lỗi snapshot: " + snapData.msg);
-            const vmId = snapData.data.list[0].snapshot.split('/').pop().split('.')[0];
-            return { vmId, serviceId: serviceIds[0] };
-        },
-
-        async replaceDevice(accessToken, loginId, fp, serviceId, reasonId, delay) {
-            if (delay) await new Promise(r => setTimeout(r, delay));
-            const headers = {
-                "accept": "application/json", "content-type": "application/json;charset=UTF-8",
-                "access-token": accessToken, "login-id": loginId,
-                "web-fingerprint": fp || "0742f9ecfe480939f8d215d6db7ebedf",
-                "terminal": "web", "lang": "vi", "update-date": Date.now()
-            };
-            const data = await this.safeFetch("https://www.ugphone.com/api/apiv1/replace_device/oneKeyNewDevice", {
-                method: "POST", headers, body: JSON.stringify({ service_id: serviceId, replace_reason: reasonId, reason: "" }), credentials: "include"
-            });
-            if (data.code !== 200) throw new Error("Replace thất bại: " + data.msg);
-            return data;
-        },
-
-        async fetchVMIdWithRetry(accessToken, loginId, fp, maxRetries, delayMs, onLog) {
-            maxRetries = maxRetries || 20;
-            delayMs = delayMs || 5000;
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const result = await this.fetchVMId(accessToken, loginId, fp, i === 0 ? 1000 : 0);
-                    return result;
-                } catch(err) {
-                    if (onLog) onLog(`⚠️ Lấy VM lần ${i+1}/${maxRetries} thất bại: ${err.message}`, true);
-                    if (i === maxRetries-1) throw err;
-                    await new Promise(r => setTimeout(r, delayMs));
-                }
-            }
-        },
-
         async buyOnParent(account, accountIndex, onLog) {
             if (!window.opener) {
                 if (onLog) onLog("❌ Không có tab mẹ", true);
@@ -320,16 +304,14 @@
         }
     };
 
-    // ------------------------------
-    // 2. UI CONTROLLER (có nút dừng, tự động lưu)
-    // ------------------------------
+    // -------------------- UI Controller (giống gốc nhưng dùng CoreAPI đã định nghĩa sẵn) --------------------
     const UIController = {
         lastAccounts: [],
         lastResults: [],
         blackSet: new Set(),
         reasonId: "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a",
-        stopRequested: false,   // cờ dừng
-        isRunning: false,       // đang chạy một tác vụ
+        stopRequested: false,
+        isRunning: false,
 
         addLog(msg, isErr) {
             const logDiv = document.getElementById('logArea');
@@ -447,9 +429,15 @@
                     const buySuccess = await CoreAPI.buyOnParent(account, index, this.addLog.bind(this));
                     if (buySuccess) {
                         try {
-                            const { vmId: newVm } = await CoreAPI.fetchVMIdWithRetry(token, loginId, fp, 20, 5000, this.addLog.bind(this));
-                            this.addLog(`✅ Lấy được VM mới: ${newVm} cho ${loginId}`);
-                            return { loginId, oldVm: null, newVm, isBlack: false, error: null };
+                            // Retry lấy VM mới
+                            for (let i=0; i<20; i++) {
+                                try {
+                                    const { vmId: newVm } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
+                                    this.addLog(`✅ Lấy được VM mới: ${newVm} cho ${loginId}`);
+                                    return { loginId, oldVm: null, newVm, isBlack: false, error: null };
+                                } catch(e) { await new Promise(r=>setTimeout(r, 5000)); }
+                            }
+                            return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Đã mua máy nhưng không lấy được VM" };
                         } catch (fetchErr) {
                             this.addLog(`❌ Không lấy được VM sau khi mua: ${fetchErr.message}`, true);
                             return { loginId, oldVm: null, newVm: null, isBlack: false, error: "Đã mua máy nhưng không lấy được VM" };
@@ -462,7 +450,6 @@
             }
         },
 
-        // Tự động lưu cấu hình (JSON, Blacklist) vào localStorage
         autoSaveConfig() {
             const jsonText = document.getElementById('jsonInput').value.trim();
             const blacklistText = document.getElementById('blacklistInput').value.trim();
@@ -502,14 +489,14 @@
             this.blackSet = this.parseBlacklist(blacklistText);
             this.lastResults = [];
             this.renderResults();
-            this.autoSaveAll(); // lưu cấu hình và kết quả rỗng
+            this.autoSaveAll();
             
             for (let i = 0; i < accounts.length && !this.stopRequested; i++) {
                 this.addLog(`🚀 Xử lý ${i+1}/${accounts.length}: ${accounts[i]['UGPHONE-ID'] || accounts[i]['loginId']}`);
                 const result = await this.processAccount(accounts[i], i, true);
                 this.lastResults.push(result);
                 this.renderResults();
-                this.autoSaveResults(); // lưu sau mỗi tài khoản
+                this.autoSaveResults();
                 if (result.error) this.addLog(`⚠️ Lỗi: ${result.error}`, true);
                 else this.addLog(`✅ VM: ${result.newVm} ${result.isBlack ? '(đã thay)' : '(giữ nguyên)'}`);
                 if (!this.stopRequested) await new Promise(r => setTimeout(r, 2000));
@@ -651,120 +638,105 @@
         }
     };
 
-    // ------------------------------
-    // 3. UI TEMPLATE (bỏ header, thêm nút dừng)
-    // ------------------------------
-    const UI_TEMPLATE = `
-        <!DOCTYPE html>
-        <html>
-        <head><title>UGphone Console Tool Pro</title>
-        <style>
-            * { box-sizing: border-box; }
-            body { margin: 0; background: #1a1a1a; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
-            .tool-container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
-            .row { display: flex; gap: 10px; flex-wrap: wrap; }
-            textarea, button { font-family: monospace; font-size: 11px; }
-            textarea { background: #1e1e2f; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; resize: vertical; }
-            button { background: #2c2c3e; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
-            button:hover { filter: brightness(1.1); }
-            .btn-success { background: #10b981; }
-            .btn-warning { background: #f59e0b; }
-            .btn-primary { background: #3b82f6; }
-            .btn-danger { background: #ef4444; }
-            .btn-secondary { background: #6b7280; }
-            .btn-smart { background: #8b5cf6; }
-            .btn-stop { background: #dc2626; }
-            .table-wrapper { flex: 1; overflow: auto; background: #0f0f1a; border-radius: 8px; border: 1px solid #2a2a3a; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #2a2a3a; }
-            th { background: #22223b; position: sticky; top: 0; }
-            .log-area { background: #0a0a12; border-radius: 8px; border: 1px solid #2a2a3a; padding: 6px; height: 120px; overflow: auto; font-family: monospace; font-size: 10px; }
-            .flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-        </style>
-        </head>
-        <body>
-        <div class="tool-container">
-            <!-- Đã bỏ thanh tiêu đề và nút đóng -->
-            <div class="row">
-                <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON - Ví dụ:\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
-                <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID - Ví dụ:\n["VM123456", "VM789012"]'></textarea>
-            </div>
-            <div class="flex">
-                <button id="runSmartBtn" class="btn-smart">🚀 Chạy thông minh</button>
-                <button id="runReplacerBtn" class="btn-success">▶ Kiểm tra & thay VM</button>
-                <button id="buyCurrentBtn" class="btn-primary">🛒 Mua máy mới</button>
-                <button id="retryAllErrorsBtn" class="btn-warning">🔄 Retry tất cả lỗi</button>
-                <button id="stopBtn" class="btn-stop">⏹️ Dừng</button>
-                <button id="exportCsvBtn" class="btn-secondary">📎 Xuất CSV</button>
-                <button id="clearTableBtn" class="btn-secondary">🗑 Xóa bảng</button>
-                <button id="saveJsonBtn" class="btn-secondary">💾 Lưu cấu hình</button>
-                <button id="saveResultsBtn" class="btn-secondary">💾 Lưu kết quả</button>
-            </div>
-            <div class="table-wrapper">
-                <table id="resultTable">
-                    <thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Hành động</th><th>Mua máy</th></tr></thead>
-                    <tbody id="resultBody"></tbody>
-                </table>
-            </div>
-            <div class="log-area" id="logArea"></div>
-        </div>
-        <script>
-            (function() {
-                // Khởi tạo controller
-                const controller = {
-                    lastAccounts: [],
-                    lastResults: [],
-                    blackSet: new Set(),
-                    reasonId: "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a",
-                    stopRequested: false,
-                    isRunning: false,
-                    addLog: ${UIController.addLog.toString()},
-                    parseBlacklist: ${UIController.parseBlacklist.toString()},
-                    renderResults: ${UIController.renderResults.toString()},
-                    processAccount: ${UIController.processAccount.toString()},
-                    autoSaveConfig: ${UIController.autoSaveConfig.toString()},
-                    autoSaveResults: ${UIController.autoSaveResults.toString()},
-                    autoSaveAll: ${UIController.autoSaveAll.toString()},
-                    runSmart: ${UIController.runSmart.toString()},
-                    runReplacer: ${UIController.runReplacer.toString()},
-                    retryAllErrors: ${UIController.retryAllErrors.toString()},
-                    manualBuy: ${UIController.manualBuy.toString()},
-                    exportCSV: ${UIController.exportCSV.toString()},
-                    clearTable: ${UIController.clearTable.toString()},
-                    saveJson: ${UIController.saveJson.toString()},
-                    saveResults: ${UIController.saveResults.toString()},
-                    loadStored: ${UIController.loadStored.toString()},
-                    stop: ${UIController.stop.toString()}
-                };
-                for (let key in controller) {
-                    if (typeof controller[key] === 'function') controller[key] = controller[key].bind(controller);
-                }
-                window.uiController = controller;
-                
-                // DOM elements
-                document.getElementById('runSmartBtn').onclick = () => window.uiController.runSmart();
-                document.getElementById('runReplacerBtn').onclick = () => window.uiController.runReplacer();
-                document.getElementById('buyCurrentBtn').onclick = () => window.uiController.manualBuy();
-                document.getElementById('retryAllErrorsBtn').onclick = () => window.uiController.retryAllErrors();
-                document.getElementById('stopBtn').onclick = () => window.uiController.stop();
-                document.getElementById('exportCsvBtn').onclick = () => window.uiController.exportCSV();
-                document.getElementById('clearTableBtn').onclick = () => window.uiController.clearTable();
-                document.getElementById('saveJsonBtn').onclick = () => window.uiController.saveJson();
-                document.getElementById('saveResultsBtn').onclick = () => window.uiController.saveResults();
-                
-                window.uiController.loadStored();
-                window.uiController.addLog("✅ Tool sẵn sàng - Có nút Dừng, tự động lưu cấu hình/kết quả");
-            })();
-        <\/script>
-        </body>
-        </html>
+    // -------------------- HTML POPUP --------------------
+    const popupHtml = `
+<!DOCTYPE html>
+<html>
+<head><title>UGphone Console Tool Pro - Fixed</title>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #1a1a1a; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; height: 100vh; overflow: hidden; }
+    .tool-container { display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    textarea, button { font-family: monospace; font-size: 11px; }
+    textarea { background: #1e1e2f; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px; resize: vertical; }
+    button { background: #2c2c3e; border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+    button:hover { filter: brightness(1.1); }
+    .btn-success { background: #10b981; }
+    .btn-warning { background: #f59e0b; }
+    .btn-primary { background: #3b82f6; }
+    .btn-danger { background: #ef4444; }
+    .btn-secondary { background: #6b7280; }
+    .btn-smart { background: #8b5cf6; }
+    .btn-stop { background: #dc2626; }
+    .table-wrapper { flex: 1; overflow: auto; background: #0f0f1a; border-radius: 8px; border: 1px solid #2a2a3a; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #2a2a3a; }
+    th { background: #22223b; position: sticky; top: 0; }
+    .log-area { background: #0a0a12; border-radius: 8px; border: 1px solid #2a2a3a; padding: 6px; height: 120px; overflow: auto; font-family: monospace; font-size: 10px; }
+    .flex { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+<div class="tool-container">
+    <div class="row">
+        <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON - Ví dụ:\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
+        <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID - Ví dụ:\n["VM123456", "VM789012"]'></textarea>
+    </div>
+    <div class="flex">
+        <button id="runSmartBtn" class="btn-smart">🚀 Chạy thông minh</button>
+        <button id="runReplacerBtn" class="btn-success">▶ Kiểm tra & thay VM</button>
+        <button id="buyCurrentBtn" class="btn-primary">🛒 Mua máy mới</button>
+        <button id="retryAllErrorsBtn" class="btn-warning">🔄 Retry tất cả lỗi</button>
+        <button id="stopBtn" class="btn-stop">⏹️ Dừng</button>
+        <button id="exportCsvBtn" class="btn-secondary">📎 Xuất CSV</button>
+        <button id="clearTableBtn" class="btn-secondary">🗑 Xóa bảng</button>
+        <button id="saveJsonBtn" class="btn-secondary">💾 Lưu cấu hình</button>
+        <button id="saveResultsBtn" class="btn-secondary">💾 Lưu kết quả</button>
+    </div>
+    <div class="table-wrapper">
+        <table id="resultTable">
+            <thead><tr><th>#</th><th>Login ID</th><th>VM cũ</th><th>Black?</th><th>VM mới</th><th>Lỗi</th><th>Hành động</th><th>Mua máy</th></tr></thead>
+            <tbody id="resultBody"></tbody>
+        </table>
+    </div>
+    <div class="log-area" id="logArea"></div>
+</div>
+<script>
+    // Khởi tạo controller và gán sự kiện
+    const controller = ${JSON.stringify(UIController, (k,v) => typeof v === 'function' ? v.toString() : v)};
+    // Phục hồi các hàm
+    const controllerObj = {};
+    for (let key in controller) {
+        if (typeof controller[key] === 'string' && (controller[key].includes('function') || controller[key].includes('async'))) {
+            controllerObj[key] = eval('(' + controller[key] + ')');
+        } else {
+            controllerObj[key] = controller[key];
+        }
+    }
+    // Gắn thêm CoreAPI vào controller để các hàm xài được
+    controllerObj.CoreAPI = CoreAPI;
+    // Bind methods
+    for (let key in controllerObj) {
+        if (typeof controllerObj[key] === 'function') controllerObj[key] = controllerObj[key].bind(controllerObj);
+    }
+    window.uiController = controllerObj;
+    
+    // Gán sự kiện
+    document.getElementById('runSmartBtn').onclick = () => window.uiController.runSmart();
+    document.getElementById('runReplacerBtn').onclick = () => window.uiController.runReplacer();
+    document.getElementById('buyCurrentBtn').onclick = () => window.uiController.manualBuy();
+    document.getElementById('retryAllErrorsBtn').onclick = () => window.uiController.retryAllErrors();
+    document.getElementById('stopBtn').onclick = () => window.uiController.stop();
+    document.getElementById('exportCsvBtn').onclick = () => window.uiController.exportCSV();
+    document.getElementById('clearTableBtn').onclick = () => window.uiController.clearTable();
+    document.getElementById('saveJsonBtn').onclick = () => window.uiController.saveJson();
+    document.getElementById('saveResultsBtn').onclick = () => window.uiController.saveResults();
+    
+    window.uiController.loadStored();
+    window.uiController.addLog("✅ Tool đã sửa lỗi CoreAPI - Sẵn sàng");
+</script>
+</body>
+</html>
     `;
 
-    const popup = window.open("", "UGphoneToolPro", "width=800,height=600,resizable=yes,scrollbars=yes");
+    const popup = window.open("", "UGphoneToolProFixed", "width=800,height=600,resizable=yes,scrollbars=yes");
     if (!popup) {
         alert("Vui lòng cho phép popup trên trình duyệt!");
         return;
     }
-    popup.document.write(UI_TEMPLATE);
+    // Truyền CoreAPI sang popup
+    popup.CoreAPI = CoreAPI;
+    popup.document.write(popupHtml);
     popup.document.close();
 })();
