@@ -363,21 +363,70 @@
                         console.log('⏳ Bước 1: Tìm và nhấp chọn khu vực Hong Kong...');
                         await new Promise(r => setTimeout(r, 1000));
                         let hkRoomClicked = false;
-                        const roomItems = document.querySelectorAll('.room-item');
-                        for (let item of roomItems) {
-                            if (item.innerText && item.innerText.includes('Hong Kong')) {
-                                item.click();
-                                console.log('✅ Click room-item Hong Kong', item);
+
+                        for (let retry = 0; retry < 5; retry++) {
+                            console.log('🔎 Quét chọn Hong Kong (lần ' + (retry + 1) + '/5)...');
+                            const roomItems = document.querySelectorAll('.room-item');
+                            console.log('📋 Danh sách các area/room tìm thấy:', Array.from(roomItems).map(el => (el.innerText || "").trim().split('\n').join(' ')));
+
+                            let targetItem = null;
+                            for (let item of roomItems) {
+                                const txt = (item.innerText || "").toLowerCase();
+                                if (txt.includes('hong') || txt.includes('hk')) {
+                                    targetItem = item;
+                                    break;
+                                }
+                            }
+
+                            if (targetItem) {
+                                console.log('👉 Định vị được room-item mong muốn:', targetItem.innerText.trim());
+                                targetItem.scrollIntoView({ block: 'center', inline: 'center' });
+                                await new Promise(r => setTimeout(r, 500));
+                                
+                                // Click directly on the element
+                                targetItem.click();
+                                
+                                // Click inner elements to guarantee event activation
+                                const innerElements = targetItem.querySelectorAll('span, div, p');
+                                for (let child of innerElements) {
+                                    child.click();
+                                }
+                                console.log('✅ Đã tác động click lên room-item và các con.');
                                 hkRoomClicked = true;
+                            } else {
+                                hkRoomClicked = await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p', 'h3'], 1500);
+                            }
+
+                            // Chờ 1 giây xem UI cập nhật danh sách các price cards (gói) tương ứng hay chưa
+                            await new Promise(r => setTimeout(r, 1000));
+
+                            const currentPrices = document.querySelectorAll('.price-item, .card-item');
+                            let hasHkPrice = false;
+                            for (let p of currentPrices) {
+                                const priceTxt = (p.innerText || "").toLowerCase();
+                                if (priceTxt.includes('hong') || priceTxt.includes('hk')) {
+                                    hasHkPrice = true;
+                                    break;
+                                }
+                            }
+
+                            if (hasHkPrice) {
+                                console.log('🎉 Phòng Hong Kong hoạt động và đồng bộ gói thành công!');
                                 break;
+                            } else {
+                                console.warn('⚠️ Cảnh báo: UI chưa cập nhật gói cho Hong Kong. Thử kích hoạt lại...');
                             }
                         }
+
                         if (!hkRoomClicked) {
-                            hkRoomClicked = await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p', 'h3']);
-                        }
-                        if (!hkRoomClicked) {
+                            console.warn('⚠️ Cảnh báo cực hạn: Không kích hoạt được Hong Kong, dùng fallback phần tử thô đầu tiên...');
                             const rawHk = document.querySelector('.room-item');
-                            if (rawHk) { rawHk.click(); hkRoomClicked = true; }
+                            if (rawHk) {
+                                rawHk.scrollIntoView({ block: 'center', inline: 'center' });
+                                await new Promise(r => setTimeout(r, 500));
+                                rawHk.click();
+                                hkRoomClicked = true;
+                            }
                         }
 
                         console.log('⏳ Bước 2: Chọn gói liên đới (UVIP Hong Kong - 250 Diamond - 4-Hour Free Trial)...');
