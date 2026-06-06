@@ -1,6 +1,6 @@
-// ===================== UI TOOL - TỔNG HỢP HOÀN CHỈNH =====================
+// ===================== UI TOOL - TỔNG HỢP HOÀN CHỈNH (ĐÃ SỬA LỖI COREAPI) =====================
 (function() {
-    // ---------- CoreAPI (nhúng cứng, không phụ thuộc vào tab cha) ----------
+    // ---------- CoreAPI (định nghĩa gốc) ----------
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
@@ -63,6 +63,15 @@
     const popup = window.open("", "UGphoneTool", "width=950,height=700,resizable=yes,scrollbars=yes");
     if (!popup) { alert("Vui lòng cho phép popup!"); return; }
 
+    // Chuyển CoreAPI thành đoạn script để nhúng vào popup (cách an toàn)
+    const coreAPIScript = `
+        window.CoreAPI = {
+            safeFetch: ${CoreAPI.safeFetch.toString()},
+            fetchVMId: ${CoreAPI.fetchVMId.toString()},
+            replaceDevice: ${CoreAPI.replaceDevice.toString()}
+        };
+    `;
+
     // HTML của popup (giao diện + logic)
     const html = `<!DOCTYPE html>
 <html>
@@ -112,8 +121,8 @@
     <div class="log-area" id="logArea"></div>
 </div>
 <script>
-    // ---------- CoreAPI được nhúng từ popup cha (đã có sẵn) ----------
-    const core = window.CoreAPI || ${JSON.stringify(CoreAPI)};
+    // CoreAPI được định nghĩa từ parent
+    ${coreAPIScript}
 
     let lastAccounts = [], lastResults = [], blackSet = new Set();
     let stopRequested = false, isRunning = false;
@@ -145,13 +154,13 @@
         const fp = acc['ugBrowserId'] || acc['web-fingerprint'];
         if (!token || !loginId) return { loginId: loginId || ("Acc"+(idx+1)), error: "Thiếu token hoặc loginId" };
         try {
-            const { vmId, serviceId } = await core.fetchVMId(token, loginId, fp, 1000);
+            const { vmId, serviceId } = await window.CoreAPI.fetchVMId(token, loginId, fp, 1000);
             const isBlack = blackSet.has(vmId);
             if (isBlack) {
                 addLog(\`⚫ VM \${vmId} bị black, replace...\`);
-                await core.replaceDevice(token, loginId, fp, serviceId, reasonId, 2000);
+                await window.CoreAPI.replaceDevice(token, loginId, fp, serviceId, reasonId, 2000);
                 await new Promise(r=>setTimeout(r, 2000));
-                const { vmId: newVm } = await core.fetchVMId(token, loginId, fp, 1000);
+                const { vmId: newVm } = await window.CoreAPI.fetchVMId(token, loginId, fp, 1000);
                 return { loginId, oldVm: vmId, newVm, isBlack: true, error: null };
             } else {
                 return { loginId, oldVm: vmId, newVm: vmId, isBlack: false, error: null };
@@ -205,7 +214,6 @@
         const black = document.getElementById('blacklistInput').value;
         if (json) localStorage.setItem('ug_tool_json', json);
         localStorage.setItem('ug_tool_black', black);
-        // Đồng thời lưu key cũ để tương thích
         if (json) localStorage.setItem('ugphone_console_json_popup', json);
         localStorage.setItem('ugphone_console_black_popup', black);
         addLog("Đã lưu cấu hình");
