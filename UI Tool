@@ -1,6 +1,6 @@
-// ===================== UI TOOL - BẢN CHẮC CHẮN HOẠT ĐỘNG =====================
+// ===================== UI TOOL - DÙNG COREAPI NỘI BỘ =====================
 (function() {
-    // CoreAPI (độc lập, không cần dùng từ tab cha)
+    // CoreAPI nhúng sẵn (tự chứa, không cần từ tab cha)
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
@@ -102,7 +102,8 @@
     let lastAccounts = [], lastResults = [], blackSet = new Set();
     let stopRequested = false, isRunning = false;
     const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
-    const core = window.opener.CoreAPI || ${JSON.stringify(CoreAPI)};
+    // Dùng CoreAPI đã được nhúng sẵn (từ biến toàn cục của popup)
+    const core = window.CoreAPI;
 
     function addLog(msg, isErr) {
         const logDiv = document.getElementById('logArea');
@@ -143,7 +144,7 @@
             }
         } catch (err) {
             const noVm = err.message.includes('chưa có VM');
-            if (autoBuy && noVm && typeof window.opener !== 'undefined') {
+            if (autoBuy && noVm && window.opener) {
                 addLog(\`🔄 Chưa có VM, gửi lệnh mua cho \${loginId}\`);
                 window.opener.postMessage({ type: 'RUN_BUY_UG', account: acc }, '*');
                 return { loginId, error: "Đã gửi yêu cầu mua, hãy thử lại sau 30s" };
@@ -321,9 +322,12 @@
 
     loadLocal();
     addLog("UI Tool sẵn sàng.");
-    if (window.opener && typeof window.opener.buyUG !== 'undefined') addLog("Đã tìm thấy buyUG trên tab cha.");
-    else addLog("⚠️ Chưa thấy buyUG, hãy load script 'buy ug' trước", true);
-    addLog("CoreAPI OK");
+    addLog("CoreAPI đã sẵn sàng (nội bộ).");
+    if (window.opener) {
+        addLog("Có tab cha, sẽ gửi postMessage khi mua máy.");
+    } else {
+        addLog("⚠️ Không có tab cha, chức năng mua máy sẽ không hoạt động.", true);
+    }
 </script>
 </body>
 </html>`;
