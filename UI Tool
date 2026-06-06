@@ -1,6 +1,5 @@
-// ===================== UI TOOL - FULL, TỰ CHỨA COREAPI, GỌI buyUG =====================
+// ===================== UI TOOL - FULL =====================
 (function() {
-    // ---------- CoreAPI (lấy VM, replace) ----------
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
@@ -65,7 +64,6 @@
         }
     };
 
-    // ---------- Tạo popup (giao diện + logic) ----------
     const popupHtml = `<!DOCTYPE html>
 <html>
 <head><title>UGphone Console Tool Pro</title>
@@ -115,19 +113,14 @@
     <div class="log-area" id="logArea"></div>
 </div>
 <script>
-    // ---------- Biến toàn cục ----------
     let lastAccounts = [];
     let lastResults = [];
     let blackSet = new Set();
     const reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
     let stopRequested = false;
     let isRunning = false;
-    // CoreAPI từ tab cha (được truyền qua window.opener.CoreAPI)
-    // Nếu không có, ta tự dùng CoreAPI nhúng sẵn trong popup (đã định nghĩa ở trên thông qua biến toàn cục của popup)
-    // Trong popup này, CoreAPI đã được định nghĩa (vì chúng ta sẽ gán window.CoreAPI trước khi write)
-    const core = window.CoreAPI;  // sẽ được gán từ bên ngoài popup
+    const core = window.CoreAPI;
 
-    // Helper log
     function addLog(msg, isErr) {
         const logDiv = document.getElementById('logArea');
         if (!logDiv) return;
@@ -139,7 +132,6 @@
         while (logDiv.children.length > 100) logDiv.removeChild(logDiv.firstChild);
     }
 
-    // Parse blacklist (hỗ trợ mảng JSON hoặc chuỗi cách nhau bằng dấu phẩy / xuống dòng)
     function parseBlacklist(input) {
         input = (input || "").trim();
         if (!input) return new Set();
@@ -149,7 +141,6 @@
         return new Set(input.split(/[,\\s\\n]+/).filter(s=>s.trim()));
     }
 
-    // Xử lý một tài khoản (lấy VM, replace nếu blacklist)
     async function processAccount(account, index, autoBuyIfNoVM) {
         const token = account['UGPHONE-Token'] || account['accessToken'];
         const loginId = account['UGPHONE-ID'] || account['loginId'];
@@ -176,7 +167,6 @@
         }
     }
 
-    // Render bảng kết quả (mỗi dòng có nút Mua máy riêng)
     function renderResults() {
         const tbody = document.getElementById('resultBody');
         if (!tbody) return;
@@ -221,7 +211,6 @@
         saveResultsToLocal();
     }
 
-    // Lưu / tải cấu hình (JSON, blacklist) và kết quả
     function saveConfigToLocal() {
         const json = document.getElementById('jsonInput').value;
         const black = document.getElementById('blacklistInput').value;
@@ -248,7 +237,6 @@
         }
     }
 
-    // Chạy kiểm tra & thay VM (không tự mua)
     async function runReplacer() {
         if (isRunning) { addLog("Đang có tác vụ chạy, hãy dừng trước", true); return; }
         const jsonText = document.getElementById('jsonInput').value.trim();
@@ -284,7 +272,6 @@
         saveResultsToLocal();
     }
 
-    // Retry các dòng bị lỗi
     async function retryErrors() {
         if (isRunning) { addLog("Đang có tác vụ chạy, hãy dừng trước", true); return; }
         const errorIndices = [];
@@ -311,7 +298,6 @@
         saveResultsToLocal();
     }
 
-    // Mua máy thủ công cho tài khoản đầu tiên trong bảng (nếu có)
     async function manualBuy() {
         if (isRunning) { addLog("Đang có tác vụ chạy, hãy dừng trước", true); return; }
         if (!lastAccounts.length) { addLog("Không có tài khoản trong bảng", true); return; }
@@ -369,7 +355,6 @@
         addLog("✅ Đã lưu cấu hình (danh sách tài khoản và blacklist)");
     }
 
-    // Gán sự kiện
     document.getElementById('runReplacerBtn').onclick = runReplacer;
     document.getElementById('manualBuyBtn').onclick = manualBuy;
     document.getElementById('retryErrorsBtn').onclick = retryErrors;
@@ -378,7 +363,6 @@
     document.getElementById('clearBtn').onclick = clearTable;
     document.getElementById('saveConfigBtn').onclick = saveConfig;
 
-    // Khởi tạo: tải dữ liệu từ local storage
     loadFromLocal();
     addLog("✅ UI Tool sẵn sàng.");
     if (typeof window.opener.buyUG === 'function') {
@@ -392,15 +376,12 @@
 </body>
 </html>`;
 
-    // Tạo popup, truyền CoreAPI và buyUG (qua window.opener) – popup sẽ truy cập window.opener.buyUG
     const popup = window.open("", "UGphoneToolFull", "width=850,height=650,resizable=yes,scrollbars=yes");
     if (!popup) {
         alert("Vui lòng cho phép popup trên trình duyệt!");
         return;
     }
-    // Gán CoreAPI cho popup (để popup dùng được)
     popup.CoreAPI = CoreAPI;
-    // Ghi HTML
     popup.document.write(popupHtml);
     popup.document.close();
 })();

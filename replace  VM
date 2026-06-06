@@ -1,6 +1,5 @@
-// ===================== REPLACE VM (đã sửa lỗi, độc lập) =====================
+// ===================== REPLACE VM =====================
 (function() {
-    // Helper safeFetch với retry
     async function safeFetch(url, options, retries = 3, delay = 1000) {
         for (let i = 0; i < retries; i++) {
             try {
@@ -142,6 +141,5 @@
         parseBlacklist,
         exportToCSV
     };
-
     console.log("✅ UGPhoneReplacer ready. Dùng: await UGPhoneReplacer.run(accounts, blacklist, delay, reasonId)");
 })();
