@@ -49,8 +49,15 @@
             method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
         });
         if (snapData.code !== 200) throw new Error(`Lỗi snapshot: ${snapData.msg}`);
+        if (!snapData.data?.list || !snapData.data.list.length) {
+            throw new Error("Không tìm thấy snapshot thiết bị. Có thể tài khoản chưa kích hoạt máy.");
+        }
         const snapshotUrl = snapData.data.list[0].snapshot;
-        const vmId = snapshotUrl.split('/').pop().split('.')[0];
+        if (!snapshotUrl) {
+            throw new Error("Device snapshot URL rỗng.");
+        }
+        const fileName = snapshotUrl.split('/').pop() || "";
+        const vmId = fileName.split('.')[0] || "Unknown";
         return { vmId, serviceId: serviceIds[0] };
     }
 
@@ -80,7 +87,7 @@
         if (input.startsWith('[') && input.endsWith(']')) {
             try {
                 const arr = JSON.parse(input);
-                if (Array.isArray(arr)) return new Set(arr.map(v => v.trim()));
+                if (Array.isArray(arr)) return new Set(arr.map(v => String(v).trim()));
             } catch(e) {}
         }
         const items = input.split(/[,\s\n]+/).filter(s => s.trim().length > 0);

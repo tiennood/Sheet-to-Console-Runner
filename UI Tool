@@ -1,8 +1,8 @@
 // ===================== UI TOOL - DÙNG JSON.STRINGIFY (REPLACER) =====================
 (function() {
-    // CoreAPI gốc
+    // CoreAPI với khai báo hàm chuẩn để tránh lỗi eval viết tắt ES6
     const CoreAPI = {
-        async safeFetch(url, options, retries = 3, delay = 1000) {
+        safeFetch: async function(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
                 try {
                     const res = await fetch(url, options);
@@ -16,7 +16,7 @@
                 }
             }
         },
-        async fetchVMId(accessToken, loginId, fp, delay) {
+        fetchVMId: async function(accessToken, loginId, fp, delay) {
             if (delay) await new Promise(r => setTimeout(r, delay));
             const headers = {
                 "accept": "application/json", "content-type": "application/json;charset=UTF-8",
@@ -28,22 +28,30 @@
                 method: "POST", headers, body: JSON.stringify({ tab: "complete_record", page: 1, limit: 10 }), credentials: "include"
             });
             if (listData.code !== 200) throw new Error("Lỗi list: " + listData.msg);
-            if (!listData.data.list.length) throw new Error("Chưa có VM");
+            if (!listData.data?.list || !listData.data.list.length) throw new Error("Chưa có đơn hàng VM");
             const orderId = listData.data.list[0].order_id;
             const statusData = await this.safeFetch("https://www.ugphone.com/api/apiv1/order/orderStatusProcess", {
                 method: "POST", headers, body: JSON.stringify({ order_id: orderId }), credentials: "include"
             });
             if (statusData.code !== 200) throw new Error("Lỗi status: " + statusData.msg);
             const serviceIds = statusData.data.service_ids;
-            if (!serviceIds.length) throw new Error("Không có service_ids");
+            if (!serviceIds || !serviceIds.length) throw new Error("Không có service_ids");
             const snapData = await this.safeFetch("https://www.ugphone.com/api/apiv1/device/deviceSnapshot", {
                 method: "POST", headers, body: JSON.stringify({ service_ids: serviceIds }), credentials: "include"
             });
             if (snapData.code !== 200) throw new Error("Lỗi snapshot: " + snapData.msg);
-            const vmId = snapData.data.list[0].snapshot.split('/').pop().split('.')[0];
+            if (!snapData.data?.list || !snapData.data.list.length) {
+                throw new Error("Không tìm thấy snapshot thiết bị. Có thể tài khoản chưa kích hoạt máy.");
+            }
+            const snapshotUrl = snapData.data.list[0].snapshot;
+            if (!snapshotUrl) {
+                throw new Error("Device snapshot URL rỗng.");
+            }
+            const fileName = snapshotUrl.split('/').pop() || "";
+            const vmId = fileName.split('.')[0] || "Unknown";
             return { vmId, serviceId: serviceIds[0] };
         },
-        async replaceDevice(accessToken, loginId, fp, serviceId, reasonId, delay) {
+        replaceDevice: async function(accessToken, loginId, fp, serviceId, reasonId, delay) {
             if (delay) await new Promise(r => setTimeout(r, delay));
             const headers = {
                 "accept": "application/json", "content-type": "application/json;charset=UTF-8",
@@ -61,7 +69,7 @@
 
     // Mở popup
     const popup = window.open("", "UGphoneTool", "width=950,height=700,resizable=yes,scrollbars=yes");
-    if (!popup) { alert("Vui lòng cho phép popup!"); return; }
+    if (!popup) { alert("Vui lòng cho phép tự động mở cửa sổ phụ (popup) trên trình duyệt của bạn!"); return; }
 
     // Chuyển CoreAPI thành chuỗi JSON với replacer giữ hàm
     const coreAPIStr = JSON.stringify(CoreAPI, (k, v) => {
@@ -97,8 +105,8 @@
 <body>
 <div class="container">
     <div class="row">
-        <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON (mỗi dòng một object hoặc mảng):\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
-        <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID (cách nhau dấu phẩy hoặc xuống dòng):\nVM123456, VM789012'></textarea>
+        <textarea id="jsonInput" rows="3" placeholder='Danh sách tài khoản JSON (mỗi dòng một object hoặc mảng):\\n[{"UGPHONE-Token":"xxx","UGPHONE-ID":"user1"}]'></textarea>
+        <textarea id="blacklistInput" rows="3" placeholder='Blacklist VM ID (cách nhau dấu phẩy hoặc xuống dòng):\\nVM123456, VM789012'></textarea>
     </div>
     <div class="flex">
         <button id="runBtn" class="btn-success">▶ Kiểm tra & thay VM</button>
@@ -151,7 +159,7 @@
         input = (input || "").trim();
         if (!input) return new Set();
         if (input.startsWith('[') && input.endsWith(']')) {
-            try { const arr = JSON.parse(input); if (Array.isArray(arr)) return new Set(arr.map(v=>v.trim())); } catch(e) {}
+            try { const arr = JSON.parse(input); if (Array.isArray(arr)) return new Set(arr.map(v => String(v).trim())); } catch(e) {}
         }
         return new Set(input.split(/[,\\s\\n]+/).filter(s=>s.trim()));
     }
@@ -165,7 +173,7 @@
             const { vmId, serviceId } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
             const isBlack = blackSet.has(vmId);
             if (isBlack) {
-                addLog(\`⚫ VM \${vmId} bị black, replace...\`);
+                addLog('⚫ VM ' + vmId + ' bị black, replace...');
                 await CoreAPI.replaceDevice(token, loginId, fp, serviceId, reasonId, 2000);
                 await new Promise(r=>setTimeout(r, 2000));
                 const { vmId: newVm } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
@@ -174,9 +182,9 @@
                 return { loginId, oldVm: vmId, newVm: vmId, isBlack: false, error: null };
             }
         } catch (err) {
-            const noVm = err.message.includes('chưa có VM');
+            const noVm = err.message.includes('chưa có VM') || err.message.includes('chưa kích hoạt máy');
             if (autoBuy && noVm && window.opener) {
-                addLog(\`🔄 Chưa có VM, gửi lệnh mua cho \${loginId}\`);
+                addLog('🔄 Chưa có VM, gửi lệnh mua cho ' + loginId);
                 window.opener.postMessage({ type: 'RUN_BUY_UG', account: acc }, '*');
                 return { loginId, error: "Đã gửi yêu cầu mua, hãy thử lại sau 30s" };
             }
@@ -207,7 +215,7 @@
                 if (!acc) return;
                 if (window.opener) {
                     window.opener.postMessage({ type: 'RUN_BUY_UG', account: acc }, '*');
-                    addLog(\`Đã gửi lệnh mua cho \${acc['UGPHONE-ID'] || acc.loginId}\`);
+                    addLog('Đã gửi lệnh mua cho ' + (acc['UGPHONE-ID'] || acc.loginId));
                 } else {
                     addLog("Không có tab cha", true);
                 }
@@ -276,7 +284,7 @@
         renderResults();
         saveConfig();
         for (let i = 0; i < accounts.length && !stopRequested; i++) {
-            addLog(\`🔍 Xử lý \${i+1}/\${accounts.length}: \${accounts[i]['UGPHONE-ID'] || accounts[i].loginId}\`);
+            addLog('🔍 Xử lý ' + (i+1) + '/' + accounts.length + ': ' + (accounts[i]['UGPHONE-ID'] || accounts[i].loginId));
             const result = await processAccount(accounts[i], i, false);
             lastResults.push(result);
             renderResults();
@@ -284,7 +292,7 @@
         }
         isRunning = false;
         if (stopRequested) addLog("⏹️ Đã dừng theo yêu cầu");
-        else addLog(\`🎉 Hoàn tất kiểm tra \${accounts.length} tài khoản.\`);
+        else addLog('🎉 Hoàn tất kiểm tra ' + accounts.length + ' tài khoản.');
         saveResults();
     }
 
@@ -329,7 +337,8 @@
         let csv = "STT,Login ID,VM cũ,Blacklist?,VM mới,Lỗi\\n";
         for (let i=0; i<lastResults.length; i++) {
             const r = lastResults[i];
-            csv += \`\${i+1},\${r.loginId||''},\${r.oldVm||''},\${r.isBlack?'Có':'Không'},\${r.newVm||''},\${r.error||''}\\n\`;
+            const stateText = r.isBlack ? "Có" : (r.error ? "-" : "Không");
+            csv += (i+1) + "," + (r.loginId||"") + "," + (r.oldVm||"") + "," + stateText + "," + (r.newVm||"") + "," + (r.error||"") + "\\n";
         }
         const blob = new Blob([csv], {type:"text/csv"});
         const a = document.createElement('a');

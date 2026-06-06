@@ -2,6 +2,21 @@
 (function() {
     console.log('🚀 Script auto click mua máy (đã sửa - chờ gọi buyUG() hoặc postMessage)');
 
+    // HỆ THỐNG QUẢN LÝ VÀ CHỐNG RÒ RỈ INTERVAL
+    let activeIntervals = [];
+    function trackInterval(intervalId) {
+        activeIntervals.push(intervalId);
+        return intervalId;
+    }
+    function clearIntervalTracked(intervalId) {
+        clearInterval(intervalId);
+        activeIntervals = activeIntervals.filter(i => i !== intervalId);
+    }
+    function clearAllIntervals() {
+        activeIntervals.forEach(clearInterval);
+        activeIntervals = [];
+    }
+
     // HÀM CHỜ PHẦN TỬ - CÓ THỂ BẠN CẦN SỬA SELECTOR Ở ĐÂY
     async function waitForElement(options, timeout = 15000) {
         return new Promise((resolve) => {
@@ -19,13 +34,14 @@
                     }
                 }
                 if (el) {
-                    clearInterval(interval);
+                    clearIntervalTracked(interval);
                     resolve(el);
                 } else if (Date.now() - start > timeout) {
-                    clearInterval(interval);
+                    clearIntervalTracked(interval);
                     resolve(null);
                 }
             }, 200);
+            trackInterval(interval);
         });
     }
 
@@ -47,21 +63,12 @@
     async function ensureDashboardPage() {
         const targetUrl = 'https://www.ugphone.com/toc-portal/#/dashboard/index';
         const currentUrl = window.location.href;
-        if (currentUrl === targetUrl) {
+        if (currentUrl === targetUrl || currentUrl.includes('/dashboard/index')) {
             console.log('✅ Đã đúng trang dashboard');
             return true;
         }
-        console.log(`⚠️ Đang ở ${currentUrl}, chuyển sang dashboard...`);
-        window.location.href = targetUrl;
-        return new Promise((resolve) => {
-            const checkInterval = setInterval(() => {
-                if (window.location.href === targetUrl) {
-                    clearInterval(checkInterval);
-                    console.log('✅ Đã chuyển xong sang dashboard');
-                    setTimeout(() => resolve(true), 1500);
-                }
-            }, 500);
-        });
+        console.warn(`⚠️ Vui lòng mở thủ công: ${targetUrl} trước khi chạy để tránh tải lại trang xóa mất phạm vi hoạt động của kịch bản.`);
+        throw new Error("Vui lòng mở trang Dashboard và chạy lại kịch bản.");
     }
 
     async function waitForPurchaseDevicePage(timeout = 15000) {
@@ -117,43 +124,52 @@
 
     async function run() {
         const overallTimeout = 60000;
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Overall timeout 60s")), overallTimeout));
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+                clearAllIntervals();
+                reject(new Error("Overall timeout 60s"));
+            }, overallTimeout);
+        });
         
         const mainPromise = (async () => {
-            await ensureDashboardPage();
-            const getButton = await waitForGetButton();
-            if (getButton.disabled) console.warn('⚠️ Nút Get đang disabled, vẫn thử click');
-            getButton.click();
-            console.log('✅ Click Get');
+            try {
+                await ensureDashboardPage();
+                const getButton = await waitForGetButton();
+                if (getButton.disabled) console.warn('⚠️ Nút Get đang disabled, vẫn thử click');
+                getButton.click();
+                console.log('✅ Click Get');
 
-            const isOnPurchasePage = await waitForPurchaseDevicePage();
-            if (!isOnPurchasePage) throw new Error("Không thể vào trang purchaseDevice");
+                const isOnPurchasePage = await waitForPurchaseDevicePage();
+                if (!isOnPurchasePage) throw new Error("Không thể vào trang purchaseDevice");
 
-            const { element: hkEl, needClick } = await waitForHongKong();
-            if (needClick) {
-                hkEl.click();
-                console.log('✅ Đã click Hong Kong');
+                const { element: hkEl, needClick } = await waitForHongKong();
+                if (needClick) {
+                    hkEl.click();
+                    console.log('✅ Đã click Hong Kong');
+                }
+
+                // Chọn card (có thể cần sửa selector)
+                const cardClicked = await safeClick({ selector: '#active-card' }, 10000);
+                if (!cardClicked) throw new Error("Không click được card");
+
+                const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)' }, 15000);
+                if (!buyClicked) throw new Error("Không click được Buy");
+
+                console.log('Đã click Buy, chờ màn thanh toán...');
+                const payFree = await waitForElement({ selector: '#pay-free-sel' }, 20000);
+                if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
+                    console.log('✅ #pay-free-sel đã xuất hiện');
+                    const payClicked = await safeClick({ text: 'Pay', tag: 'button' }, 10000);
+                    if (payClicked) console.log('💰 Đã thanh toán!');
+                    else console.warn('⚠️ Không click được Pay');
+                } else {
+                    console.warn('⚠️ Không tìm thấy #pay-free-sel hoặc text sai, thử click Pay bằng selector khác');
+                    await safeClick({ text: "Pay", tag: "button", contains: true }, 5000);
+                }
+                console.log('🏁 Kết thúc thành công');
+            } finally {
+                clearAllIntervals();
             }
-
-            // Chọn card (có thể cần sửa selector)
-            const cardClicked = await safeClick({ selector: '#active-card' }, 10000);
-            if (!cardClicked) throw new Error("Không click được card");
-
-            const buyClicked = await safeClick({ selector: '#buy-btn:not(.van-button--disabled):not(.van-button--loading)' }, 15000);
-            if (!buyClicked) throw new Error("Không click được Buy");
-
-            console.log('Đã click Buy, chờ màn thanh toán...');
-            const payFree = await waitForElement({ selector: '#pay-free-sel' }, 20000);
-            if (payFree && payFree.innerText.includes('Use 250Diamond Payment')) {
-                console.log('✅ #pay-free-sel đã xuất hiện');
-                const payClicked = await safeClick({ text: 'Pay', tag: 'button' }, 10000);
-                if (payClicked) console.log('💰 Đã thanh toán!');
-                else console.warn('⚠️ Không click được Pay');
-            } else {
-                console.warn('⚠️ Không tìm thấy #pay-free-sel hoặc text sai, thử click Pay bằng selector khác');
-                await safeClick({ selector: 'button:contains("Pay")' }, 5000);
-            }
-            console.log('🏁 Kết thúc thành công');
         })();
 
         await Promise.race([mainPromise, timeoutPromise]);
