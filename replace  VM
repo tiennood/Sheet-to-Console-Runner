@@ -1,79 +1,14 @@
 (function() {
-    const container = document.createElement('div');
-    container.style.cssText = `
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        width: 500px;
-        max-height: 780px;
-        background: #1e1e2f;
-        color: #eee;
-        border-radius: 12px;
-        z-index: 99999;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
-        display: flex;
-        flex-direction: column;
-        font-family: monospace;
-        font-size: 11px;
-        overflow: auto;
-        padding: 10px;
-    `;
-    container.innerHTML = `
-        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <strong>🔧 UGphone Replacer</strong>
-            <button id="closeBtn" style="background:#ef4444; border:none; color:white; border-radius:4px; padding:2px 6px;">✖</button>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <label>📦 JSON (mỗi dòng 1 object hoặc mảng):</label>
-            <textarea id="jsonListInput" rows="4" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" placeholder='{"UGPHONE-Token":"...","UGPHONE-ID":"..."}'></textarea>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <label>🚫 Blacklist VM (mảng JSON hoặc text cách dấu phẩy):</label>
-            <textarea id="blacklistInput" rows="2" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" placeholder='["VM010010076126","VM010010036226"] hoặc VM010010076126, VM010010036226'></textarea>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <label>⏱️ Delay trước mỗi API (ms):</label>
-            <input id="delayInput" type="number" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" value="3000">
-        </div>
-        <div style="margin-bottom: 8px;">
-            <label>🔄 Replace reason ID:</label>
-            <input id="reasonIdInput" type="text" style="width:100%; background:#2d2d3f; color:white; border:1px solid #555; font-size:10px;" value="3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a">
-        </div>
-        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-            <button id="processBtn" style="background:#10b981; border:none; color:white; border-radius:4px; padding:4px 8px;">▶ Xử lý</button>
-            <button id="exportBtn" style="background:#6b7280; border:none; color:white; border-radius:4px; padding:4px 8px;">📎 CSV</button>
-            <button id="clearTableBtn" style="background:#f59e0b; border:none; color:white; border-radius:4px; padding:4px 8px;">🗑 Xóa</button>
-        </div>
-        <div style="overflow: auto; max-height: 500px;">
-            <table id="resultTable" style="width:100%; border-collapse: collapse; font-size:10px;">
-                <thead>
-                    <tr style="background:#333;">
-                        <th style="border:1px solid #444; padding:2px;">#</th>
-                        <th style="border:1px solid #444; padding:2px;">VM cũ</th>
-                        <th style="border:1px solid #444; padding:2px;">Black?</th>
-                        <th style="border:1px solid #444; padding:2px;">Hành động</th>
-                        <th style="border:1px solid #444; padding:2px;">VM mới</th>
-                        <th style="border:1px solid #444; padding:2px;">Lỗi</th>
-                    </tr>
-                </thead>
-                <tbody id="resultBody"></tbody>
-            </table>
-        </div>
-    `;
-    document.body.appendChild(container);
-
-    // Hàm parse blacklist (hỗ trợ mảng JSON hoặc text)
+    // -------------------- GIỮ NGUYÊN CÁC HÀM XỬ LÝ --------------------
     function parseBlacklist(input) {
-        input = input.trim();
+        input = (input || "").trim();
         if (!input) return new Set();
-        // Thử parse như JSON array
         if (input.startsWith('[') && input.endsWith(']')) {
             try {
                 const arr = JSON.parse(input);
                 if (Array.isArray(arr)) return new Set(arr.map(v => v.trim()));
-            } catch(e) { /* không phải JSON, fallback */ }
+            } catch(e) {}
         }
-        // Nếu không, xử lý như text cách nhau dấu phẩy, xuống dòng, khoảng trắng
         const items = input.split(/[,\s\n]+/).filter(s => s.trim().length > 0);
         return new Set(items);
     }
@@ -139,16 +74,7 @@
         return data;
     }
 
-    async function processAccount(accountJson, blacklistSet, reasonId, delayMs, index) {
-        const row = document.getElementById(`row-${index}`);
-        if (!row) return;
-        const cells = row.cells;
-        const oldVmCell = cells[1];
-        const inBlacklistCell = cells[2];
-        const actionCell = cells[3];
-        const newVmCell = cells[4];
-        const errorCell = cells[5];
-        
+    async function processAccount(accountJson, blacklistSet, reasonId, delayMs, index, resultsArray) {
         try {
             let jsonObj = typeof accountJson === 'string' ? JSON.parse(accountJson) : accountJson;
             const accessToken = jsonObj['UGPHONE-Token'] || jsonObj['accessToken'];
@@ -157,89 +83,64 @@
             if (!accessToken || !loginId) throw new Error("Thiếu token/login-id");
 
             const { vmId: oldVm, serviceId } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
-            oldVmCell.innerText = oldVm;
             const isBlacklisted = blacklistSet.has(oldVm);
-            inBlacklistCell.innerText = isBlacklisted ? "Có" : "Không";
-            actionCell.innerText = isBlacklisted ? "Thay thế" : "Bỏ qua";
-            
+            let newVm = oldVm;
+            let action = isBlacklisted ? "Thay thế" : "Bỏ qua";
+            let error = "";
+
             if (isBlacklisted) {
                 await replaceDevice(accessToken, loginId, webFingerprint, serviceId, reasonId, delayMs);
                 await new Promise(r => setTimeout(r, 2000));
-                const { vmId: newVm } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
-                newVmCell.innerText = newVm;
-                errorCell.innerText = "";
-                row.style.backgroundColor = "#2a5a2a";
-            } else {
-                newVmCell.innerText = oldVm;
-                errorCell.innerText = "";
-                row.style.backgroundColor = "#2a5a2a";
+                const { vmId: freshVm } = await fetchVMId(accessToken, loginId, webFingerprint, delayMs);
+                newVm = freshVm;
             }
+            resultsArray.push({ index, oldVm, isBlacklisted, action, newVm, error, success: true });
         } catch (err) {
-            errorCell.innerText = err.message;
-            row.style.backgroundColor = "#7a2a2a";
+            resultsArray.push({ index, oldVm: "Lỗi", isBlacklisted: false, action: "Thất bại", newVm: "", error: err.message, success: false });
         }
     }
 
-    async function run() {
-        const jsonText = document.getElementById('jsonListInput').value.trim();
-        const blacklistText = document.getElementById('blacklistInput').value.trim();
-        const delayMs = parseInt(document.getElementById('delayInput').value) || 0;
-        const reasonId = document.getElementById('reasonIdInput').value.trim() || "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
-        if (!jsonText) return alert("Nhập JSON");
-        
-        // Parse danh sách accounts
-        let accounts = [];
-        try {
-            let parsed = JSON.parse(jsonText);
-            if (Array.isArray(parsed)) accounts = parsed;
-            else accounts = jsonText.split(/\r?\n/).filter(l=>l.trim()).map(l=>JSON.parse(l));
-        } catch(e) {
-            const lines = jsonText.split(/\r?\n/);
-            for (let line of lines) {
-                if (line.trim()) accounts.push(JSON.parse(line));
-            }
-        }
-        if (!accounts.length) return alert("Không có JSON hợp lệ");
-        
-        // Parse blacklist (hỗ trợ mảng JSON)
-        const blacklistSet = parseBlacklist(blacklistText);
-        
-        const tbody = document.getElementById('resultBody');
-        tbody.innerHTML = '';
+    // -------------------- HÀM CHẠY CHÍNH (KHÔNG UI) --------------------
+    async function runReplacer(accounts, blacklistInput, delayMs = 3000, reasonId = "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a") {
+        if (!accounts || !accounts.length) throw new Error("Danh sách accounts trống");
+        const blacklistSet = parseBlacklist(blacklistInput);
+        const results = [];
         for (let i = 0; i < accounts.length; i++) {
-            const row = tbody.insertRow();
-            row.id = `row-${i}`;
-            for (let j = 0; j < 6; j++) {
-                const cell = row.insertCell();
-                cell.style.border = "1px solid #444";
-                cell.style.padding = "2px";
-                if (j === 0) cell.innerText = i+1;
-                else cell.innerText = "⏳";
+            await processAccount(accounts[i], blacklistSet, reasonId, delayMs, i, results);
+        }
+        return results;
+    }
+
+    // Xuất ra global để dùng từ console
+    window.UGPhoneReplacer = {
+        run: runReplacer,
+        parseBlacklist,
+        // Hàm export CSV
+        exportToCSV: (results) => {
+            let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
+            for (const r of results) {
+                csv += `${r.index+1},${r.oldVm},${r.isBlacklisted ? "Có" : "Không"},${r.action},${r.newVm},${r.error}\n`;
             }
+            const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = "ugphone_results.csv";
+            a.click();
+            URL.revokeObjectURL(a.href);
         }
-        for (let i = 0; i < accounts.length; i++) {
-            await processAccount(accounts[i], blacklistSet, reasonId, delayMs, i);
-        }
-    }
+    };
 
-    function exportCSV() {
-        let csv = "STT,VM cũ,Blacklist?,Hành động,VM mới,Lỗi\n";
-        const rows = document.querySelectorAll('#resultBody tr');
-        for (const row of rows) {
-            const cells = row.cells;
-            csv += `${cells[0].innerText},${cells[1].innerText},${cells[2].innerText},${cells[3].innerText},${cells[4].innerText},${cells[5].innerText}\n`;
-        }
-        const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = "ugphone_results.csv";
-        a.click();
-        URL.revokeObjectURL(a.href);
+    // Tự động chạy nếu có sẵn dữ liệu toàn cục (tuỳ chọn)
+    if (window.ugphoneAccounts && window.ugphoneAccounts.length) {
+        (async () => {
+            const accounts = window.ugphoneAccounts;
+            const blacklist = window.ugphoneBlacklist || "";
+            const delay = window.ugphoneDelay || 3000;
+            const reason = window.ugphoneReasonId || "3kl5c04c-1nhd-z35e-0bsb-98aa9b13d09a";
+            console.log("🔁 Tự động chạy UGPhone Replacer (không UI)");
+            const results = await runReplacer(accounts, blacklist, delay, reason);
+            console.table(results);
+            if (window.ugphoneAutoExport) window.UGPhoneReplacer.exportToCSV(results);
+        })();
     }
-
-    function clearTable() { document.getElementById('resultBody').innerHTML = ''; }
-    document.getElementById('processBtn').onclick = run;
-    document.getElementById('exportBtn').onclick = exportCSV;
-    document.getElementById('clearTableBtn').onclick = clearTable;
-    document.getElementById('closeBtn').onclick = () => container.remove();
 })();
