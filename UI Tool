@@ -1,6 +1,6 @@
-// ===================== UI TOOL - TỔNG HỢP HOÀN CHỈNH (ĐÃ SỬA LỖI COREAPI) =====================
+// ===================== UI TOOL - DÙNG JSON.STRINGIFY (REPLACER) =====================
 (function() {
-    // ---------- CoreAPI (định nghĩa gốc) ----------
+    // CoreAPI gốc
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
             for (let i = 0; i < retries; i++) {
@@ -59,18 +59,15 @@
         }
     };
 
-    // ---------- Mở popup ----------
+    // Mở popup
     const popup = window.open("", "UGphoneTool", "width=950,height=700,resizable=yes,scrollbars=yes");
     if (!popup) { alert("Vui lòng cho phép popup!"); return; }
 
-    // Chuyển CoreAPI thành đoạn script để nhúng vào popup (cách an toàn)
-    const coreAPIScript = `
-        window.CoreAPI = {
-            safeFetch: ${CoreAPI.safeFetch.toString()},
-            fetchVMId: ${CoreAPI.fetchVMId.toString()},
-            replaceDevice: ${CoreAPI.replaceDevice.toString()}
-        };
-    `;
+    // Chuyển CoreAPI thành chuỗi JSON với replacer giữ hàm
+    const coreAPIStr = JSON.stringify(CoreAPI, (k, v) => {
+        if (typeof v === 'function') return v.toString();
+        return v;
+    });
 
     // HTML của popup (giao diện + logic)
     const html = `<!DOCTYPE html>
@@ -121,8 +118,19 @@
     <div class="log-area" id="logArea"></div>
 </div>
 <script>
-    // CoreAPI được định nghĩa từ parent
-    ${coreAPIScript}
+    // Khôi phục CoreAPI từ chuỗi JSON (có hàm dạng string)
+    const CoreAPI = (function() {
+        const obj = ${coreAPIStr};
+        const restored = {};
+        for (let key in obj) {
+            if (typeof obj[key] === 'string' && (obj[key].includes('async') || obj[key].includes('function'))) {
+                restored[key] = eval('(' + obj[key] + ')');
+            } else {
+                restored[key] = obj[key];
+            }
+        }
+        return restored;
+    })();
 
     let lastAccounts = [], lastResults = [], blackSet = new Set();
     let stopRequested = false, isRunning = false;
@@ -154,13 +162,13 @@
         const fp = acc['ugBrowserId'] || acc['web-fingerprint'];
         if (!token || !loginId) return { loginId: loginId || ("Acc"+(idx+1)), error: "Thiếu token hoặc loginId" };
         try {
-            const { vmId, serviceId } = await window.CoreAPI.fetchVMId(token, loginId, fp, 1000);
+            const { vmId, serviceId } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
             const isBlack = blackSet.has(vmId);
             if (isBlack) {
                 addLog(\`⚫ VM \${vmId} bị black, replace...\`);
-                await window.CoreAPI.replaceDevice(token, loginId, fp, serviceId, reasonId, 2000);
+                await CoreAPI.replaceDevice(token, loginId, fp, serviceId, reasonId, 2000);
                 await new Promise(r=>setTimeout(r, 2000));
-                const { vmId: newVm } = await window.CoreAPI.fetchVMId(token, loginId, fp, 1000);
+                const { vmId: newVm } = await CoreAPI.fetchVMId(token, loginId, fp, 1000);
                 return { loginId, oldVm: vmId, newVm, isBlack: true, error: null };
             } else {
                 return { loginId, oldVm: vmId, newVm: vmId, isBlack: false, error: null };
@@ -344,7 +352,6 @@
         else addLog("⚠️ Không có tiến trình nào đang chạy");
     }
 
-    // Gán sự kiện
     document.getElementById('runBtn').onclick = runReplacer;
     document.getElementById('buyBtn').onclick = manualBuy;
     document.getElementById('retryBtn').onclick = retryErrors;
@@ -354,7 +361,7 @@
     document.getElementById('saveBtn').onclick = () => { saveConfig(); addLog("✅ Đã lưu cấu hình"); };
 
     loadLocal();
-    addLog("✅ UI Tool sẵn sàng (CoreAPI nội bộ, hỗ trợ key cũ).");
+    addLog("✅ UI Tool sẵn sàng (CoreAPI phục hồi từ JSON.stringify).");
     if (window.opener) {
         addLog("📡 Có tab cha, sẽ gửi postMessage khi mua máy.");
     } else {
