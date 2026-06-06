@@ -127,36 +127,66 @@
         
         const mainPromise = (async () => {
             try {
-                await ensureDashboardPage();
-                
-                console.log('⏳ Bước 1: Ấn nút "Get" (hoặc "Get Now") để vào trang mua máy...');
-                const pressedGet = await clickByTexts(['Get', 'Get Now', 'Get now', 'Nhận ngay', 'Nhận'], ['span', 'div', 'button', 'p']);
-                if (!pressedGet) {
-                    const fallbackGet = document.querySelector('.get-btn, [class*="get-btn"], [id*="get-btn"]');
-                    if (fallbackGet) { fallbackGet.click(); console.log('✅ Click Get fallback selector'); }
-                    else throw new Error("Không tìm thấy nút Get trên dashboard");
+                // Tự động chuyển hướng sang trang mua máy vì đây là trang đích cần chạy kịch bản
+                console.log('🧭 Chuyển hướng trực tiếp tới trang purchaseDevice...');
+                const targetUrl = 'https://www.ugphone.com/toc-portal/#/purchaseDevice';
+                if (!window.location.href.includes('purchaseDevice')) {
+                    window.location.hash = '#/purchaseDevice';
+                    window.location.href = targetUrl;
+                    await new Promise(r => setTimeout(r, 1500));
                 }
 
                 const isOnPurchasePage = await waitForPurchaseDevicePage();
-                if (!isOnPurchasePage) throw new Error("Không thể chuyển tới trang purchaseDevice");
-
-                console.log('⏳ Bước 2: Chọn Booking items (ví dụ UVIP hoặc UVIP-HK)...');
-                await new Promise(r => setTimeout(r, 1000));
-                await clickByTexts(['UVIP HK', 'UVIP-HK', 'UVIP_HK', 'UVIP'], ['span', 'div', 'p', 'h3']);
-
-                console.log('⏳ Bước 3: Chọn Server / Area (Hong Kong, Hongkong)...');
-                await new Promise(r => setTimeout(r, 1000));
-                await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p']);
-
-                console.log('⏳ Bước 4: Chọn gói package (Ví dụ: 250 Diamond)...');
-                await new Promise(r => setTimeout(r, 1000));
-                const activeCard = await clickByTexts(['250Diamond', '250 Kim Cương', '1 Day', '1 Ngày', '250'], ['span', 'div', 'p', 'h3', 'h4']);
-                if (!activeCard) {
-                    const fallbackCard = document.querySelector('.room-item, .card-item, .item-card');
-                    if (fallbackCard) { fallbackCard.click(); console.log('✅ Click fallback card'); }
+                if (!isOnPurchasePage) {
+                    console.log('🧭 Thử gán lại URL đầy đủ...');
+                    window.location.href = targetUrl;
+                    const secondChance = await waitForPurchaseDevicePage(12000);
+                    if (!secondChance) throw new Error("Không thể chuyển tới trang purchaseDevice");
                 }
 
-                console.log('⏳ Bước 5: Ấn nút Buy hoặc Buy Now...');
+                console.log('⏳ Bước 1: Tìm và nhấp chọn khu vực Hong Kong...');
+                await new Promise(r => setTimeout(r, 1000));
+                let hkRoomClicked = false;
+                const roomItems = document.querySelectorAll('.room-item');
+                for (let item of roomItems) {
+                    if (item.innerText && item.innerText.includes('Hong Kong')) {
+                        item.click();
+                        console.log('✅ Click room-item Hong Kong', item);
+                        hkRoomClicked = true;
+                        break;
+                    }
+                }
+                if (!hkRoomClicked) {
+                    hkRoomClicked = await clickByTexts(['Hong Kong', 'HongKong', 'HK', 'HongKong-UVIP'], ['span', 'div', 'p', 'h3']);
+                }
+                if (!hkRoomClicked) {
+                    console.warn('⚠️ Cảnh báo: Không thể xác định phòng Hong Kong qua text, thử tìm kiếm dạng thô...');
+                    const rawHk = document.querySelector('.room-item');
+                    if (rawHk) { rawHk.click(); hkRoomClicked = true; }
+                }
+
+                console.log('⏳ Bước 2: Chọn gói liên đới (UVIP Hong Kong - 250 Diamond - 4-Hour Free Trial)...');
+                await new Promise(r => setTimeout(r, 1000));
+                let cardClicked = false;
+                const priceItems = document.querySelectorAll('.price-item, .card-item, #active-card');
+                for (let item of priceItems) {
+                    const text = item.innerText || "";
+                    if (text.includes('250') && (text.includes('UVIP') || text.includes('New Users') || text.includes('Free Trial') || text.includes('Hong Kong'))) {
+                        item.click();
+                        console.log('✅ Click price-item chọn gói:', text.trim().replace(/\s+/g, ' '));
+                        cardClicked = true;
+                        break;
+                    }
+                }
+                if (!cardClicked) {
+                    const activeCardEl = document.querySelector('.active-card, #active-card');
+                    if (activeCardEl) { activeCardEl.click(); cardClicked = true; console.log('✅ Click class active-card fallback'); }
+                }
+                if (!cardClicked) {
+                    cardClicked = await clickByTexts(['250Diamond', '250 Kim Cương', '1 Day', '1 Ngày', '250'], ['span', 'div', 'p', 'h3', 'h4']);
+                }
+
+                console.log('⏳ Bước 3: Ấn nút Buy hoặc Buy Now...');
                 await new Promise(r => setTimeout(r, 1000));
                 const buyBtnClicked = await clickByTexts(['Buy', 'Buy Now', 'Mua', 'Mua ngay'], ['span', 'button', 'div', 'p']);
                 if (!buyBtnClicked) {
@@ -165,14 +195,41 @@
                     else throw new Error("Không thấy nút bấm Mua");
                 }
 
-                console.log('⏳ Bước 6: Chờ màn thanh toán, chọn thanh toán bằng Diamond...');
+                console.log('⏳ Bước 4: Chờ màn thanh toán và đối chiếu thông tin...');
                 await new Promise(r => setTimeout(r, 2000));
-                await clickByTexts(['Use 250Diamond Payment', '250Diamond', 'Diamond Payment', 'Diamond'], ['span', 'div', 'p', 'label']);
+                
+                // Đối soát và xác thực nội dung hạch toán trong .info-box
+                const infoBox = document.querySelector('.info-box, [class*="info-box"]');
+                if (infoBox) {
+                    const txt = infoBox.innerText || "";
+                    console.log('📄 Nội dung hóa đơn nhận diện được:\n' + txt);
+                    const checkUvip = txt.includes('UVIP');
+                    const checkHk = txt.includes('Hong Kong') || txt.includes('HK');
+                    if (checkUvip && checkHk) {
+                        console.log('✅ Xác minh Buying items: UVIP, Server: Hong Kong hoàn toàn chuẩn xác.');
+                    } else {
+                        console.warn('⚠️ Cảnh báo: Thông tin hóa đơn thanh toán có thể không khớp hoàn toàn.');
+                    }
+                } else {
+                    console.log('ℹ️ Không có .info-box, bỏ qua bước kiểm chứng thô.');
+                }
 
-                console.log('⏳ Bước 7: Xác nhận thanh toán (Pay button)...');
+                console.log('⏳ Bước 5: Kích hoạt đảm bảo chọn "Use 250Diamond Payment" trước khi nhấp Pay...');
+                // Nhấp chọn phương thức thanh toán
+                const paySel = document.querySelector('#pay-free-sel') || 
+                                await waitForElement({ text: 'Use 250Diamond Payment', tag: 'div' }, 3000) ||
+                                await waitForElement({ text: 'Diamond Payment', tag: 'div' }, 3000);
+                if (paySel) {
+                    paySel.click();
+                    console.log('✅ Đã chọn/click phương thức thanh toán Diamond.');
+                } else {
+                    await clickByTexts(['Use 250Diamond Payment', '250Diamond', 'Diamond Payment', 'Diamond'], ['span', 'div', 'p', 'label']);
+                }
+
+                console.log('⏳ Bước 6: Xác nhận thanh toán (Pay button)...');
                 await new Promise(r => setTimeout(r, 1000));
                 
-                // Wait for the button to be clickable, non-disabled (safely bypasses van-button--disabled/loading)
+                // Chờ và click nút xác nhận thanh toán cuối cùng
                 const payBtnEl = await waitForClickable({ text: 'Pay', tag: 'button' }, 10000) || 
                                  await waitForClickable({ text: 'Thanh toán', tag: 'button' }, 5000) ||
                                  await waitForClickable({ text: 'Xác nhận', tag: 'button' }, 5000);
@@ -186,7 +243,7 @@
                     else console.warn('⚠️ Không tìm được nút Pay khả dụng');
                 }
                 
-                console.log('🏁 Kết thúc thành công');
+                console.log('🏁 Kết thúc kịch bản mua tự động thành công');
             } finally {
                 clearAllIntervals();
             }
