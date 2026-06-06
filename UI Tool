@@ -1,4 +1,4 @@
-// ===================== UI TOOL - FULL =====================
+// ===================== UI TOOL - FULL, SẠCH LỖI =====================
 (function() {
     const CoreAPI = {
         async safeFetch(url, options, retries = 3, delay = 1000) {
